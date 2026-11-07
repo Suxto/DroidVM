@@ -145,10 +145,13 @@ target_compile_options(vkprobe PRIVATE -Wall -Wextra -O2)
 add_executable(daemon unixhelper/daemon.c)
 target_compile_options(daemon PRIVATE -Wall -Wextra -O2)
 
+add_executable(pointergrab pointergrab/pointergrab.c)
+target_compile_options(pointergrab PRIVATE -Wall -Wextra -Werror -O2)
+
 # AGP's hashed .cxx output paths change with configuration. Export only the
 # intended executables to a stable variant/ABI directory for the asset task.
 if(DEFINED DROIDVM_BIN_OUTPUT_ROOT)
-    foreach(binary droidvm daemon droidvmd)
+    foreach(binary droidvm daemon droidvmd pointergrab)
         set_target_properties(${binary} PROPERTIES RUNTIME_OUTPUT_DIRECTORY
             "${DROIDVM_BIN_OUTPUT_ROOT}/${DROIDVM_BUILD_TYPE}/${ANDROID_ABI}")
     endforeach()

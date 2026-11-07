@@ -12,7 +12,7 @@
 	url = https://github.com/Droid-VM/DroidVM-Prebuilts
 [submodule "daemon"]
 	path = daemon
-	url = ../DroidVM-Daemon.git
+	url = https://github.com/Droid-VM/DroidVM-Daemon.git
 [submodule "webui"]
 	path = webui
 	url = https://github.com/Droid-VM/DroidVM-WebUI.git

@@ -11,4 +11,8 @@
         android:icon="@drawable/ic_rotate"
         android:title="@string/vnc_menu_rotate" />
 
+    <item
+        android:id="@+id/menu_pointer_grab"
+        android:checkable="true"
+        android:title="@string/native_pointer_grab" />
 </menu>
