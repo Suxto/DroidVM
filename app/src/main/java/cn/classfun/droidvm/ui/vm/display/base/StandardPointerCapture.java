@@ -16,7 +16,8 @@ public final class StandardPointerCapture implements CapturedPointerLayout.Handl
     private CapturedTouchpadFrames pad;
     private boolean active, natural;
     private int mouseButtons;
-    private boolean seenPad, seenMouse;
+    private boolean seenPad, seenMouse, hoverValid;
+    private int hoverX, hoverY;
     private float mouseX, mouseY;
     private final float[] wheelV = new float[2], wheelH = new float[2];
 
@@ -62,7 +63,7 @@ public final class StandardPointerCapture implements CapturedPointerLayout.Handl
         if (forwarder != null) {
             buttons(mouseButtons, 0);
         }
-        mouseButtons = 0;
+        mouseButtons = 0; hoverValid = false;
         mouseX = mouseY = 0;
         Arrays.fill(wheelV, 0); Arrays.fill(wheelH, 0);
     }
@@ -115,10 +116,41 @@ public final class StandardPointerCapture implements CapturedPointerLayout.Handl
     }
     private boolean touchpad(MotionEvent event) {
         int action = event.getActionMasked();
-        if (action == MotionEvent.ACTION_SCROLL) { pad.cancelTap(); scroll(event, true); return true; }
+        if (action == MotionEvent.ACTION_SCROLL) {
+            pad.cancelTap(); scroll(event, true);
+            pad.setButtons(event.getButtonState(), event.getEventTime());
+            hoverValid = false;
+            return true;
+        }
+        if (action == MotionEvent.ACTION_BUTTON_PRESS || action == MotionEvent.ACTION_BUTTON_RELEASE) {
+            pad.setButtons(event.getButtonState(), event.getEventTime());
+            return true;
+        }
+        if (action == MotionEvent.ACTION_HOVER_MOVE || action == MotionEvent.ACTION_HOVER_ENTER
+                || action == MotionEvent.ACTION_HOVER_EXIT) {
+            // Hover is pointer motion, never a new finger contact or a pending tap.
+            for (int h = 0; h < event.getHistorySize(); h++) hover(event, h);
+            hover(event, -1);
+            if (action == MotionEvent.ACTION_HOVER_EXIT) hoverValid = false;
+            pad.setButtons(event.getButtonState(), event.getEventTime());
+            return true;
+        }
+        hoverValid = false;
         for (int h = 0; h < event.getHistorySize(); h++) sample(event, h);
         sample(event, -1);
         return true;
+    }
+    private void hover(MotionEvent event, int history) {
+        float x = history < 0 ? event.getX() : event.getHistoricalX(history);
+        float y = history < 0 ? event.getY() : event.getHistoricalY(history);
+        int nx = normalize(event, MotionEvent.AXIS_X, x), ny = normalize(event, MotionEvent.AXIS_Y, y);
+        float dx = history < 0 ? event.getAxisValue(MotionEvent.AXIS_RELATIVE_X)
+            : event.getHistoricalAxisValue(MotionEvent.AXIS_RELATIVE_X, history);
+        float dy = history < 0 ? event.getAxisValue(MotionEvent.AXIS_RELATIVE_Y)
+            : event.getHistoricalAxisValue(MotionEvent.AXIS_RELATIVE_Y, history);
+        if (dx != 0 || dy != 0) mouseMove(dx, dy);
+        else if (hoverValid) mouseMove((nx - hoverX) * 12f / 34, (ny - hoverY) * 12f / 51);
+        hoverX = nx; hoverY = ny; hoverValid = true;
     }
     private void sample(MotionEvent event, int history) {
         long time = history < 0 ? event.getEventTime() : event.getHistoricalEventTime(history);

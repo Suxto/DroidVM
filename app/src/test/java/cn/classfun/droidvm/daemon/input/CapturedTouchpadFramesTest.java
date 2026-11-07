@@ -47,6 +47,10 @@ public class CapturedTouchpadFramesTest {
         pad.accept(new CapturedTouchpadFrames.Frame(new int[]{4,8}, new int[]{500,1000}, new int[]{653,653}, -1, 120, 0));
         assertEquals(List.of("scroll 1 0"), events);
     }
+    @Test public void buttonOnlyEventsDoNotInventFingerContacts() {
+        pad.setButtons(1, 100); pad.setButtons(0, 180); pad.reset();
+        assertEquals(List.of("button 272 true", "button 272 false"), events);
+    }
     @Test public void explicitScrollCancelsThePendingTap() {
         single(500, -1, 100, 0); pad.cancelTap(); single(500, 0, 180, 0);
         assertTrue(events.isEmpty());

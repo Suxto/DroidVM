@@ -46,12 +46,15 @@ public final class CapturedTouchpadFrames {
             pad.event(3, 0x35, frame.x[i], frame.time);
             pad.event(3, 0x36, frame.y[i], frame.time);
         }
-        if (((buttons ^ frame.buttons) & 1) != 0)
-            pad.event(1, 0x110, (frame.buttons & 1) != 0 ? 1 : 0, frame.time);
-        if (((buttons | frame.buttons) & ~1) != 0) pad.cancelTap();
-        extraButtons(buttons, frame.buttons);
-        buttons = frame.buttons;
-        pad.event(0, 0, 0, frame.time);
+        setButtons(frame.buttons, frame.time);
+    }
+    public void setButtons(int next, long time) {
+        if (((buttons ^ next) & 1) != 0)
+            pad.event(1, 0x110, (next & 1) != 0 ? 1 : 0, time);
+        if (((buttons | next) & ~1) != 0) pad.cancelTap();
+        extraButtons(buttons, next);
+        buttons = next;
+        pad.event(0, 0, 0, time);
         if ((buttons & ~1) != 0) pad.cancelTap();
     }
     private void extraButtons(int before, int after) {

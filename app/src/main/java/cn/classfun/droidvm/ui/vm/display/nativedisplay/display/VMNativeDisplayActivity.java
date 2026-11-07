@@ -951,8 +951,8 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         var popup = new MaterialMenu(this, fabMenu);
         popup.inflate(R.menu.menu_native_display_menu);
         popup.getMenu().findItem(R.id.menu_pointer_grab).setChecked(pointerGrab.isEnabled());
-        popup.getMenu().findItem(R.id.menu_pointer_standard).setChecked(!pointerGrab.isRootMode());
-        popup.getMenu().findItem(R.id.menu_pointer_root).setChecked(pointerGrab.isRootMode());
+        popup.getMenu().findItem(pointerGrab.isRootMode()
+            ? R.id.menu_pointer_root : R.id.menu_pointer_standard).setChecked(true);
         popup.getMenu().findItem(R.id.menu_pointer_natural_scroll).setChecked(pointerGrab.isNaturalScroll());
         var header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
