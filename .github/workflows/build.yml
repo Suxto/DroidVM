@@ -16,6 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DROIDVM_PREBUILT_COMPRESSION_LEVEL: "9"
+      HAS_SIGN_KEY: ${{ secrets.APP_SIGN_KEY_JKS != '' }}
 
     steps:
       - name: Checkout repository
@@ -50,25 +51,27 @@ jobs:
       - name: Build release APK
         run: ./gradlew assembleRelease
 
-      - name: Sign release APK
+      - name: Sign APKs with persistent fork key
         if: ${{ env.HAS_SIGN_KEY == 'true' }}
         env:
-          HAS_SIGN_KEY: ${{ secrets.APP_SIGN_KEY_JKS != '' }}
           APP_SIGN_KEY_JKS: ${{ secrets.APP_SIGN_KEY_JKS }}
           APP_SIGN_KEY_PASS: ${{ secrets.APP_SIGN_KEY_PASS }}
         run: |
           BUILD_TOOLS="${ANDROID_HOME}/build-tools/36.0.0"
           echo "$APP_SIGN_KEY_JKS" | base64 -d > /tmp/keystore.jks
-          UNSIGNED=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
-          ALIGNED="${UNSIGNED%.apk}-aligned.apk"
-          "${BUILD_TOOLS}/zipalign" -f -v 4 "$UNSIGNED" "$ALIGNED"
-          "${BUILD_TOOLS}/apksigner" sign \
-            --ks /tmp/keystore.jks \
-            --ks-pass "pass:${APP_SIGN_KEY_PASS}" \
-            --key-pass "pass:${APP_SIGN_KEY_PASS}" \
-            --out "$UNSIGNED" \
-            "$ALIGNED"
-          rm -f "$ALIGNED" /tmp/keystore.jks
+          trap 'rm -f /tmp/keystore.jks' EXIT
+          for BUILD_TYPE in debug release; do
+            APK=$(find "app/build/outputs/apk/${BUILD_TYPE}" -name '*.apk' | head -1)
+            ALIGNED="${APK%.apk}-aligned.apk"
+            "${BUILD_TOOLS}/zipalign" -f -v 4 "$APK" "$ALIGNED"
+            "${BUILD_TOOLS}/apksigner" sign \
+              --ks /tmp/keystore.jks \
+              --ks-pass env:APP_SIGN_KEY_PASS \
+              --key-pass env:APP_SIGN_KEY_PASS \
+              --out "$APK" \
+              "$ALIGNED"
+            rm -f "$ALIGNED"
+          done
 
       - name: Get version name
         id: version
