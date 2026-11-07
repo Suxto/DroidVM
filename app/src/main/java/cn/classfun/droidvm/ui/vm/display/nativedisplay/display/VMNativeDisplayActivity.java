@@ -60,6 +60,7 @@ import cn.classfun.droidvm.lib.ui.ImeInsetsExempt;
 import cn.classfun.droidvm.lib.ui.MaterialMenu;
 import cn.classfun.droidvm.ui.vm.display.base.DaemonDisplayAttach;
 import cn.classfun.droidvm.ui.vm.display.base.PhysicalKeyboardGrab;
+import cn.classfun.droidvm.ui.vm.display.base.PhysicalPointerGrab;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayChromeController;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayExtraKeysPanel;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayKeyboardMenuRow;
@@ -271,6 +272,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     // Asks the daemon to take the host's physical keyboard for this console while it is in
     // front and no IME wants it; see PhysicalKeyboardGrab for the whole of the rule.
     private PhysicalKeyboardGrab keyboardGrab;
+    private PhysicalPointerGrab pointerGrab;
     // Bits of the lamp masks the daemon sends, which are the Linux LED_* codes: NUML 0, CAPSL 1,
     // SCROLLL 2.
     private static final int LED_MASK_NUM = 1;
@@ -295,6 +297,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         // Before the views: applyInitial() runs while they are being built and tells this
         // the keyboard mode it starts in.
         keyboardGrab = new PhysicalKeyboardGrab(vmId, () -> screenId, screenInputEnabled);
+        pointerGrab = new PhysicalPointerGrab(vmId, () -> screenId);
 
         bindViews();
         toolbar.setTitle(vmName.isEmpty() ? getString(R.string.native_display_title) : vmName);
@@ -323,6 +326,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
                     // The grab has no such fallback: the daemon is the only process that can hold
                     // it, and it has already dropped it with the token.
                     keyboardGrab.setService(null);
+                    pointerGrab.setService(null);
                 }
             });
         displayAttach.start();
@@ -330,6 +334,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
 
     private void onRootConnected(@NonNull INativeDisplayRootService service) {
         keyboardGrab.setService(service);
+        pointerGrab.setService(service);
         // Try a direct unix-socket sink to the daemon (one write per evdev frame, no IPC
         // round-trip); on any failure it falls back to the vm_input JSON-RPC path below.
         directSink = new DirectInputSink(vmId, () -> screenId, service, this::sendInputToDaemon);
@@ -755,6 +760,12 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
 
     @Override
     public boolean dispatchKeyEvent(@NonNull KeyEvent event) {
+        // Tablet volume key stays outside the grabbed keyboard and always provides an exit.
+        if (pointerGrab != null && pointerGrab.isEnabled()
+                && event.getKeyCode() == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) pointerGrab.setEnabled(false);
+            return true;
+        }
         int keyCode = event.getKeyCode();
         // A hardware-mouse right-click the framework (or OEM ROM) failed to see consumed gets
         // synthesized as a BACK key - sometimes mouse-sourced, sometimes (OEM injection) claiming
@@ -934,6 +945,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     private void showFabMenu() {
         var popup = new MaterialMenu(this, fabMenu);
         popup.inflate(R.menu.menu_native_display_menu);
+        popup.getMenu().findItem(R.id.menu_pointer_grab).setChecked(pointerGrab.isEnabled());
         var header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
         header.addView(buildInputModeHeader(popup));
@@ -981,7 +993,10 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
 
     private boolean onMenuItemClicked(@NonNull MenuItem item) {
         int id = item.getItemId();
-        if (id == R.id.menu_fullscreen) {
+        if (id == R.id.menu_pointer_grab) {
+            pointerGrab.setEnabled(!pointerGrab.isEnabled());
+            return true;
+        } else if (id == R.id.menu_fullscreen) {
             toggleFullscreen();
             return true;
         } else if (id == R.id.menu_rotate) {
@@ -1124,6 +1139,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         // from eating multi-finger input meant for the guest (see SystemGestureGuard).
         SystemGestureGuard.enterDisplay();
         keyboardGrab.setResumed(true);
+        pointerGrab.setResumed(true);
     }
 
     @Override
@@ -1132,12 +1148,14 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         GamePerfHint.exitGameplay(this);
         SystemGestureGuard.exitDisplay();
         keyboardGrab.setResumed(false);
+        pointerGrab.setResumed(false);
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
         if (keyboardGrab != null) keyboardGrab.close();
+        if (pointerGrab != null) pointerGrab.close();
         if (displaySource != null) {
             displaySource.shutdown();
             displaySource = null;

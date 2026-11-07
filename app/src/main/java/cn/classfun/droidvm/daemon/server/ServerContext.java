@@ -19,6 +19,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import cn.classfun.droidvm.daemon.input.KeyboardGrabManager;
+import cn.classfun.droidvm.daemon.input.PointerGrabManager;
 import cn.classfun.droidvm.daemon.network.NetworkInstanceStore;
 import cn.classfun.droidvm.daemon.network.backend.DefaultRouterWatcher;
 import cn.classfun.droidvm.daemon.usb.UsbPassthroughManager;
@@ -35,6 +36,9 @@ public final class ServerContext {
     private final DefaultRouterWatcher routerWatcher = new DefaultRouterWatcher(this);
     private final UsbPassthroughManager usb = new UsbPassthroughManager(this);
     private final KeyboardGrabManager keyboard = new KeyboardGrabManager(this);
+    private final PointerGrabManager pointer = new PointerGrabManager(this);
+
+    public PointerGrabManager getPointer() { return pointer; }
     private final Map<UUID, VMExportTask> exportTasks = new ConcurrentHashMap<>();
     private final Map<UUID, VMImportTask> importTasks = new ConcurrentHashMap<>();
     public DataItem appConfig = DataItem.newObject();

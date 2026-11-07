@@ -55,4 +55,6 @@ interface INativeDisplayRootService {
      * the pressed key on the drawn keyboard, and nothing else needs the traffic.
      */
     void setKeyEcho(String vmId, String screenId, IPhysicalKeyEcho echo);
+    /** Renew a foreground-only Xiaomi pad lease; false releases it. */
+    int setPointerGrab(String vmId, String screenId, boolean grab, IBinder token);
 }

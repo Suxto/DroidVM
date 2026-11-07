@@ -73,6 +73,12 @@ public final class NativeDisplayBinder {
             }
 
             @Override
+            public int setPointerGrab(String vmId, String screenId, boolean grab, IBinder token) {
+                if (vmId == null || vmId.isEmpty()) return 0;
+                return ctx.getPointer().set(vmId, screenId == null ? "" : screenId, grab, token);
+            }
+
+            @Override
             public int setKeyboardGrab(String vmId, String screenId, boolean grab,
                                        IBinder token) {
                 var keyboard = ctx.getKeyboard();
