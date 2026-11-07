@@ -1130,6 +1130,12 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     }
 
     @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (pointerGrab != null) pointerGrab.setFocused(hasFocus);
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
         // A VM display is on screen and rendering: tell the platform this is sustained heavy

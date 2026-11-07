@@ -18,10 +18,10 @@ public final class PhysicalPointerGrab {
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService calls = Executors.newSingleThreadExecutor();
     private INativeDisplayRootService service;
-    private boolean enabled, resumed, closed, pending;
+    private boolean enabled, resumed, focused, closed, pending;
     private final Runnable heartbeat = new Runnable() {
         public void run() {
-            if (closed || !enabled || !resumed || service == null) return;
+            if (closed || !enabled || !resumed || !focused || service == null) return;
             // At most one outstanding renewal; never accumulate leases during a stalled IPC.
             if (!pending) send(true);
             main.postDelayed(this, 750);
@@ -33,6 +33,7 @@ public final class PhysicalPointerGrab {
     }
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean value) { enabled = value; apply(); }
+    public void setFocused(boolean value) { focused = value; apply(); }
     public void setResumed(boolean value) { resumed = value; apply(); }
     public void setService(INativeDisplayRootService value) {
         if (service != null && service != value) send(false);
@@ -42,7 +43,7 @@ public final class PhysicalPointerGrab {
     private void apply() {
         main.removeCallbacks(heartbeat);
         if (closed) return;
-        if (enabled && resumed && service != null) main.post(heartbeat);
+        if (enabled && resumed && focused && service != null) main.post(heartbeat);
         else send(false);
     }
     private void send(boolean grab) {

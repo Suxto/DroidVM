@@ -17,7 +17,7 @@ and two-finger vertical/horizontal scrolling. X/Y resolution is calibrated to th
 observed 34/51 units per mm. Tap-to-drag, configurable acceleration, pinch zoom,
 Windows precision-touchpad gestures, other pad models and VNC are outside this version.
 
-The foreground UI renews a three-second lease from its main loop. Pause, destruction,
+The foreground UI renews a three-second lease from its main loop. Window focus loss, pause, destruction,
 binder death, stopped VM, read errors and lost evdev frames release capture. An
 independent rescue worker releases the hardware if the lease expires even when the
 guest input writer is blocked. Device discovery retries while the foreground request
