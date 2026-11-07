@@ -1748,4 +1748,5 @@
     <string name="vm_config_close_editor">Close editor</string>
     <string name="vm_delete_error">Deletion failed or could not be confirmed. Disk files were kept. Reload the VM list before trying again.</string>
     <string name="native_pointer_grab">Capture Xiaomi touchpad (experimental)</string>
+    <string name="native_pointer_natural_scroll">Natural touchpad scrolling</string>
 </resources>

@@ -1690,4 +1690,5 @@
     <string name="vm_config_close_editor">关闭编辑器</string>
     <string name="vm_delete_error">删除失败或无法确认结果，已保留磁盘文件。请刷新虚拟机列表后再试。</string>
     <string name="native_pointer_grab">捕获小米触控板（实验）</string>
+    <string name="native_pointer_natural_scroll">触控板自然滚动</string>
 </resources>

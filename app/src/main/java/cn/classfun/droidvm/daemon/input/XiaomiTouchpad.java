@@ -11,6 +11,7 @@ public final class XiaomiTouchpad {
         void scroll(int vertical, int horizontal);
     }
     private final Output out;
+    private final boolean naturalScroll;
     private final boolean[] active = new boolean[8];
     private final int[] x = new int[8], y = new int[8];
     private int slot, previousCount, maxCount, physicalButton;
@@ -19,7 +20,12 @@ public final class XiaomiTouchpad {
     private long started;
     private boolean clicked;
 
-    public XiaomiTouchpad(Output out) { this.out = out; }
+    public XiaomiTouchpad(Output out) { this(out, true); }
+
+    public XiaomiTouchpad(Output out, boolean naturalScroll) {
+        this.out = out;
+        this.naturalScroll = naturalScroll;
+    }
 
     public void event(int type, int code, int value, long now) {
         if (type == 0 && code == 3) { // SYN_DROPPED: caller must reopen for a clean baseline.
@@ -72,7 +78,8 @@ public final class XiaomiTouchpad {
                 wheelX += dx / 3; wheelY -= dy / 3;
                 int hx = (int) wheelX, vy = (int) wheelY;
                 wheelX -= hx; wheelY -= vy;
-                if (hx != 0 || vy != 0) out.scroll(vy, hx);
+                if (hx != 0 || vy != 0)
+                    out.scroll(naturalScroll ? -vy : vy, naturalScroll ? -hx : hx);
             }
         }
         if (count == 0 && previousCount > 0 && !clicked && travel < 2

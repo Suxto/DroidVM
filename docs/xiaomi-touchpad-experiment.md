@@ -29,6 +29,11 @@ is released on normal teardown where the guest input channel remains available.
 This branch is based on cbe66e1, the version installed on the tablet. It deliberately
 leaves the native daemon submodule and its Binder API unchanged.
 
+The floating menu also offers **Natural touchpad scrolling**, enabled by default.
+It reverses vertical and horizontal two-finger scrolling for this captured pad only.
+The setting is remembered; changing it restarts capture to clear accumulated deltas.
+External mouse wheel events continue through their existing input path unchanged.
+
 ## Validation
 
 Run `./gradlew testDebugUnitTest assembleDebug`. Recorded synthetic MT frames cover

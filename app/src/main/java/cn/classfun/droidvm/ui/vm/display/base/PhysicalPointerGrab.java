@@ -49,6 +49,16 @@ public final class PhysicalPointerGrab {
 
     public PhysicalPointerGrab(Context context) { this.context = context.getApplicationContext(); }
     public boolean isEnabled() { return enabled; }
+    public boolean isNaturalScroll() {
+        return context.getSharedPreferences("pointer-grab", Context.MODE_PRIVATE)
+            .getBoolean("natural_scroll", true);
+    }
+    public void setNaturalScroll(boolean natural) {
+        context.getSharedPreferences("pointer-grab", Context.MODE_PRIVATE).edit()
+            .putBoolean("natural_scroll", natural).apply();
+        stop();
+        apply();
+    }
     public void setEnabled(boolean value) { enabled = value; apply(); }
     public void setResumed(boolean value) { resumed = value; apply(); }
     public void setFocused(boolean value) { focused = value; apply(); }
@@ -102,7 +112,7 @@ public final class PhysicalPointerGrab {
                     write(EvdevEncoder.encodeMouseButton((short) code, down));
                 }
                 public void scroll(int v, int h) { write(EvdevEncoder.encodeMouseWheel(v, h)); }
-            });
+            }, isNaturalScroll());
             try {
                 String asset = String.format("bin/%s/pointergrab", Build.SUPPORTED_ABIS[0]);
                 try (InputStream in = context.getAssets().open(asset)) {

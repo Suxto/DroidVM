@@ -49,7 +49,33 @@ public class XiaomiTouchpadTest {
         position(0, 500, 602); position(1, 1000, 602); frame(140);
         assertTrue(events.isEmpty());
         position(0, 500, 653); position(1, 1000, 653); frame(160);
-        assertEquals(List.of("scroll -1 0"), events);
+        assertEquals(List.of("scroll 1 0"), events);
+    }
+    @Test public void naturalScrollReversesHorizontalWheel() {
+        contact(0, 1, 500, 500); contact(1, 2, 1000, 500); frame(100);
+        position(0, 602, 500); position(1, 1102, 500); frame(120);
+        assertEquals(List.of("scroll 0 -1"), events);
+    }
+    @Test public void traditionalScrollCanBeSelectedForThePadOnly() {
+        List<Integer> wheel = new ArrayList<>();
+        var traditional = new XiaomiTouchpad(new XiaomiTouchpad.Output() {
+            public void move(int x, int y) { }
+            public void button(int code, boolean down) { }
+            public void scroll(int v, int h) { wheel.add(v); }
+        }, false);
+        for (int i = 0; i < 2; i++) {
+            traditional.event(3, 0x2f, i, 0);
+            traditional.event(3, 0x39, i + 1, 0);
+            traditional.event(3, 0x35, 500, 0);
+            traditional.event(3, 0x36, 500, 0);
+        }
+        traditional.event(0, 0, 0, 100);
+        for (int i = 0; i < 2; i++) {
+            traditional.event(3, 0x2f, i, 0);
+            traditional.event(3, 0x36, 653, 0);
+        }
+        traditional.event(0, 0, 0, 120);
+        assertEquals(List.of(-1), wheel);
     }
     @Test public void physicalDragAndResetReleaseButtonWithoutTap() {
         contact(0, 1, 500, 500); frame(100);
