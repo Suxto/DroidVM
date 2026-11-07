@@ -60,7 +60,7 @@ import cn.classfun.droidvm.lib.ui.ImeInsetsExempt;
 import cn.classfun.droidvm.lib.ui.MaterialMenu;
 import cn.classfun.droidvm.ui.vm.display.base.DaemonDisplayAttach;
 import cn.classfun.droidvm.ui.vm.display.base.PhysicalKeyboardGrab;
-import cn.classfun.droidvm.ui.vm.display.base.PhysicalPointerGrab;
+import cn.classfun.droidvm.ui.vm.display.base.PointerCaptureController;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayChromeController;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayExtraKeysPanel;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayKeyboardMenuRow;
@@ -274,7 +274,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     // Asks the daemon to take the host's physical keyboard for this console while it is in
     // front and no IME wants it; see PhysicalKeyboardGrab for the whole of the rule.
     private PhysicalKeyboardGrab keyboardGrab;
-    private PhysicalPointerGrab pointerGrab;
+    private PointerCaptureController pointerGrab;
     // Bits of the lamp masks the daemon sends, which are the Linux LED_* codes: NUML 0, CAPSL 1,
     // SCROLLL 2.
     private static final int LED_MASK_NUM = 1;
@@ -300,9 +300,10 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         // Before the views: applyInitial() runs while they are being built and tells this
         // the keyboard mode it starts in.
         keyboardGrab = new PhysicalKeyboardGrab(vmId, () -> screenId, screenInputEnabled);
-        pointerGrab = new PhysicalPointerGrab(this);
+        pointerGrab = new PointerCaptureController(this);
 
         bindViews();
+        pointerGrab.setView(findViewById(R.id.main));
         toolbar.setTitle(vmName.isEmpty() ? getString(R.string.native_display_title) : vmName);
         toolbar.setNavigationOnClickListener(v -> finish());
         setupViews();
@@ -694,6 +695,8 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     // Button presses are ALWAYS consumed - an unhandled BUTTON_SECONDARY press is what makes the
     // framework synthesize a BACK key, which must never fire inside the VM display.
     private boolean onSurfaceGenericMotion(View v, MotionEvent event) {
+        if (event.getActionMasked() == MotionEvent.ACTION_BUTTON_PRESS)
+            pointerGrab.requestAfterClick(event);
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_SCROLL:
                 if (inputForwarder != null) {
@@ -948,6 +951,8 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         var popup = new MaterialMenu(this, fabMenu);
         popup.inflate(R.menu.menu_native_display_menu);
         popup.getMenu().findItem(R.id.menu_pointer_grab).setChecked(pointerGrab.isEnabled());
+        popup.getMenu().findItem(R.id.menu_pointer_standard).setChecked(!pointerGrab.isRootMode());
+        popup.getMenu().findItem(R.id.menu_pointer_root).setChecked(pointerGrab.isRootMode());
         popup.getMenu().findItem(R.id.menu_pointer_natural_scroll).setChecked(pointerGrab.isNaturalScroll());
         var header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
@@ -998,6 +1003,9 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         int id = item.getItemId();
         if (id == R.id.menu_pointer_grab) {
             pointerGrab.setEnabled(!pointerGrab.isEnabled());
+            return true;
+        } else if (id == R.id.menu_pointer_standard || id == R.id.menu_pointer_root) {
+            pointerGrab.setRootMode(id == R.id.menu_pointer_root);
             return true;
         } else if (id == R.id.menu_pointer_natural_scroll) {
             pointerGrab.setNaturalScroll(!pointerGrab.isNaturalScroll());

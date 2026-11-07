@@ -1742,6 +1742,8 @@
     <!-- U+1F512, as an entity: the base file stays ASCII (scripts/ci/check_ascii.py). -->
     <string name="usb_devices_locked_fmt" translatable="false">&#128274; %1$s</string>
     <string name="usb_devices_idle_kept">يبقى %1$s مع المضيف: تعذر على أحد برامج التشغيل تحريره، لذا لن يتحول إلى خامل إلا عند فصله</string>
-    <string name="native_pointer_grab">Capture Xiaomi touchpad (experimental)</string>
+    <string name="native_pointer_grab">Capture mouse / touchpad (experimental)</string>
     <string name="native_pointer_natural_scroll">Natural touchpad scrolling</string>
+    <string name="native_pointer_standard">Standard capture (no root)</string>
+    <string name="native_pointer_root">Root exclusive capture (Xiaomi pad)</string>
 </resources>

@@ -91,6 +91,8 @@ public final class XiaomiTouchpad {
         lastX = cx; lastY = cy; previousCount = count; previousMask = mask;
     }
 
+    public void cancelTap() { clicked = true; }
+
     public void reset() {
         int released = physicalButton;
         physicalButton = previousCount = previousMask = maxCount = 0;

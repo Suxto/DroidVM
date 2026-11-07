@@ -1747,6 +1747,8 @@
     <string name="vm_config_reload_required">The configuration changed, or the save result could not be confirmed. Your edits are still on this page. Cancel to keep them visible, or close the editor and reopen the VM from the list to check its current configuration before editing again. Closing discards unsaved edits and USB rules.</string>
     <string name="vm_config_close_editor">Close editor</string>
     <string name="vm_delete_error">Deletion failed or could not be confirmed. Disk files were kept. Reload the VM list before trying again.</string>
-    <string name="native_pointer_grab">Capture Xiaomi touchpad (experimental)</string>
+    <string name="native_pointer_grab">Capture mouse / touchpad (experimental)</string>
     <string name="native_pointer_natural_scroll">Natural touchpad scrolling</string>
+    <string name="native_pointer_standard">Standard capture (no root)</string>
+    <string name="native_pointer_root">Root exclusive capture (Xiaomi pad)</string>
 </resources>
