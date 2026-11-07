@@ -11,6 +11,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import cn.classfun.droidvm.daemon.server.ServerContext;
 import cn.classfun.droidvm.lib.natives.UnixHelper;
 import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
@@ -31,6 +33,8 @@ public final class PointerGrabManager {
     private int[] rescueFds = new int[0];
     private volatile boolean revoked;
     private final XiaomiTouchpad pad;
+    private final ScheduledExecutorService worker, rescue;
+    private ScheduledFuture<?> readTask, rescueTask;
 
     public PointerGrabManager(ServerContext ctx) {
         this.ctx = ctx;
@@ -41,22 +45,22 @@ public final class PointerGrabManager {
             }
             public void scroll(int v, int h) { write(EvdevEncoder.encodeMouseWheel(v, h)); }
         });
-        var worker = Executors.newSingleThreadScheduledExecutor(r -> {
+        worker = Executors.newSingleThreadScheduledExecutor(r -> {
             var t = new Thread(r, "pointer-grab"); t.setDaemon(true); return t;
         });
-        worker.scheduleWithFixedDelay(this::tick, 8, 8, TimeUnit.MILLISECONDS);
-        var rescue = Executors.newSingleThreadScheduledExecutor(r -> {
+        rescue = Executors.newSingleThreadScheduledExecutor(r -> {
             var t = new Thread(r, "pointer-rescue"); t.setDaemon(true); return t;
         });
-        rescue.scheduleWithFixedDelay(() -> {
-            // Independent of the guest writer: even a blocked crosvm socket cannot trap the pad.
-            synchronized (fdLock) {
-                if (SystemClock.uptimeMillis() < expires || rescueFds.length == 0) return;
-                revoked = true;
-                for (int fd : rescueFds) UnixHelper.nativeEvdevGrab(fd, false);
-                rescueFds = new int[0];
-            }
-        }, 200, 200, TimeUnit.MILLISECONDS);
+    }
+
+    private void rescueExpiredLease() {
+        // Independent of the guest writer: even a blocked crosvm socket cannot trap the pad.
+        synchronized (fdLock) {
+            if (SystemClock.uptimeMillis() < expires || rescueFds.length == 0) return;
+            revoked = true;
+            for (int fd : rescueFds) UnixHelper.nativeEvdevGrab(fd, false);
+            rescueFds = new int[0];
+        }
     }
 
     public synchronized int set(String id, String screenId, boolean grab, IBinder token) {
@@ -77,6 +81,11 @@ public final class PointerGrabManager {
             catch (Exception e) { release(); return 0; }
         }
         expires = SystemClock.uptimeMillis() + 3000;
+        if (readTask == null) {
+            readTask = worker.scheduleWithFixedDelay(this::tick, 8, 8, TimeUnit.MILLISECONDS);
+            rescueTask = rescue.scheduleWithFixedDelay(
+                this::rescueExpiredLease, 200, 200, TimeUnit.MILLISECONDS);
+        }
         return fds.size();
     }
 
@@ -144,6 +153,9 @@ public final class PointerGrabManager {
     }
 
     private void release() {
+        // No polling or timer wakeups when the experiment is disabled.
+        if (readTask != null) { readTask.cancel(false); readTask = null; }
+        if (rescueTask != null) { rescueTask.cancel(false); rescueTask = null; }
         // Free hardware before writing button-up: the guest socket can be blocked.
         synchronized (fdLock) {
             rescueFds = new int[0];
