@@ -50,6 +50,7 @@ public final class PointerCaptureController {
         focused = value; apply();
     }
     public void setSink(InputForwarder.InputSink value) {
+        if (closed) return;
         if (sink == value) return;
         sink = value;
         if (standard != null) standard.setSink(value);

@@ -21,10 +21,11 @@ public final class StandardPointerCapture implements CapturedPointerLayout.Handl
     private final CapturedPointerLayout view;
     private final InputManager inputManager;
     private final SparseArray<DeviceState> devices = new SparseArray<>();
-    private ExecutorService worker;
+    // Reuse one worker across sink replacement so old releases cannot arrive after new presses.
+    private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> new Thread(r, "CapturedPointer"));
     private PointerEventQueue queue;
     private PointerButtons buttons;
-    private boolean active, natural, systemNatural;
+    private boolean active, natural, systemNatural, closed;
 
     public StandardPointerCapture(CapturedPointerLayout view) {
         this.view = view;
@@ -32,12 +33,11 @@ public final class StandardPointerCapture implements CapturedPointerLayout.Handl
         view.setCaptureHandler(this);
     }
     public void setSink(InputForwarder.InputSink sink) {
+        if (closed) return;
         stop();
         if (queue != null) queue.close();
-        if (worker != null) worker.shutdown(); // drain releases to the old sink
-        queue = null; worker = null; buttons = null;
+        queue = null; buttons = null;
         if (sink == null) return;
-        worker = Executors.newSingleThreadExecutor(r -> new Thread(r, "CapturedPointer"));
         queue = new PointerEventQueue(worker, new PointerEventQueue.Output() {
             private void write(byte[] data) {
                 if (data == null) return;
@@ -75,7 +75,11 @@ public final class StandardPointerCapture implements CapturedPointerLayout.Handl
         if (requested || view.hasPointerCapture()) view.releasePointerCapture();
         resetDevices();
     }
-    public void close() { setSink(null); view.setCaptureHandler(null); }
+    public void close() {
+        setSink(null); closed = true;
+        worker.shutdown(); // drain the old sink's releases before retiring the worker
+        view.setCaptureHandler(null);
+    }
     public void requestAfterClick(MotionEvent event) {
         if (active && !view.hasPointerCapture() && (event.isFromSource(InputDevice.SOURCE_MOUSE)
                 || event.isFromSource(InputDevice.SOURCE_TOUCHPAD))) {

@@ -53,4 +53,14 @@ public class PointerEventQueueTest {
         q.move(1, 0); q.button(272, false); drain();
         assertEquals(List.of("failed", "released"), result);
     }
+    @Test public void sinkReplacementDrainsOldReleasesBeforeNewPresses() {
+        queue.button(272, false); queue.close();
+        var replacement = new PointerEventQueue(worker::addLast, new PointerEventQueue.Output() {
+            public void move(int x, int y) { }
+            public void button(int code, boolean down) { events.add("new press"); }
+            public void scroll(int v, int h) { }
+        });
+        replacement.button(272, true); drain();
+        assertEquals(List.of("button 272 false", "new press"), events);
+    }
 }
