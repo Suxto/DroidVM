@@ -33,6 +33,9 @@ public final class StandardPointerCapture implements CapturedPointerLayout.Handl
     }
     public void start(boolean natural) {
         if (forwarder == null || !view.hasWindowFocus()) return;
+        // Captured events follow the focused hierarchy. Preserve a focused IME child;
+        // otherwise focus this root so DecorView actually routes captured events here.
+        if (!view.hasFocus()) view.requestFocus();
         this.natural = natural;
         seenPad = seenMouse = false;
         pad = new CapturedTouchpadFrames(new XiaomiTouchpad.Output() {

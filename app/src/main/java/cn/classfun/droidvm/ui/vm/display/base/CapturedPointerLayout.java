@@ -13,7 +13,10 @@ public final class CapturedPointerLayout extends LinearLayout {
         void onCaptureChanged(boolean captured);
     }
     private Handler handler;
-    public CapturedPointerLayout(Context context, AttributeSet attrs) { super(context, attrs); }
+    public CapturedPointerLayout(Context context, AttributeSet attrs) {
+        super(context, attrs);
+        setFocusableInTouchMode(true);
+    }
     public void setCaptureHandler(Handler handler) { this.handler = handler; }
     @Override public boolean dispatchCapturedPointerEvent(MotionEvent event) {
         return handler != null && handler.onEvent(event) || super.dispatchCapturedPointerEvent(event);
