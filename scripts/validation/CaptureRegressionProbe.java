@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import android.content.Context;
 import android.os.Looper;
 import android.view.InputDevice;
@@ -34,7 +35,7 @@ public class CaptureRegressionProbe {
   if(!entered.await(3,TimeUnit.SECONDS))throw new AssertionError("worker not paused");
   capture.close(sink::close);resume.countDown();
   if(!worker.awaitTermination(3,TimeUnit.SECONDS))throw new AssertionError("worker not drained");
-  System.out.println("Lifecycle actual guest button events="+guest+" expected=[1, 0]");
+  System.out.println(fmt("Lifecycle actual guest button events=%s expected=[1, 0]", guest));
   if(!guest.equals(List.of(1,0)))throw new AssertionError("release was dropped");
   if(sink.write(2,new byte[0]))throw new AssertionError("sink was not closed after drain");
  }
@@ -45,20 +46,20 @@ public class CaptureRegressionProbe {
    public void scroll(int v,int h){position[0]=Math.max(0,position[0]-v);}
   });
   q.scroll(1,0);q.scroll(-1,0);while(!work.isEmpty())work.removeFirst().run();
-  System.out.println("Wheel top-boundary position="+position[0]+" expected=1");
+  System.out.println(fmt("Wheel top-boundary position=%d expected=1", position[0]));
   if(position[0]!=1)throw new AssertionError("wheel reversal was lost");
  }
  static void chord(){
   boolean[] held={false};List<String> raw=new ArrayList<>();
   TouchpadGestureRecognizer pad=new TouchpadGestureRecognizer(new PointerEventQueue.Output(){
    public void move(int x,int y){}public void scroll(int v,int h){}
-   public void button(int code,boolean down){raw.add(code+":"+down);if(code==273)held[0]=down;}
+   public void button(int code,boolean down){raw.add(fmt("%d:%s", code, down));if(code==273)held[0]=down;}
   },true);
   pad.frame(3,10,10,100,1);pad.setButtons(3);pad.setButtons(2);
-  System.out.println("Raw chord secondary held="+held[0]+" expected=true events="+raw);
+  System.out.println(fmt("Raw chord secondary held=%s expected=true events=%s", held[0], raw));
   if(!held[0])throw new AssertionError("secondary released while still held");
   pad.setButtons(0);if(held[0])throw new AssertionError("final secondary release missing");
-  if(!raw.equals(List.of("273:true","273:false")))throw new AssertionError("duplicate transitions "+raw);
+  if(!raw.equals(List.of("273:true","273:false")))throw new AssertionError(fmt("duplicate transitions %s", raw));
  }
  public static void main(String[]args)throws Exception {lifecycle();wheel();chord();System.out.println("ALL 3 merge-review regression checks passed");}
 }

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import android.content.Context;
 import android.os.Looper;
 import android.view.InputDevice;
@@ -22,8 +23,8 @@ public class StandardCaptureProbe {
   ((ExecutorService)f.get(capture)).submit(()->{}).get(5,TimeUnit.SECONDS);
  }
  static void expect(String label,String...expected) throws Exception {
-  flush();if(!events.equals(Arrays.asList(expected))) throw new AssertionError(label+" "+events+" expected "+Arrays.toString(expected));
-  events.clear();checks++;System.out.println("PASS "+label);
+  flush();if(!events.equals(Arrays.asList(expected))) throw new AssertionError(fmt("%s %s expected %s", label, events, Arrays.toString(expected)));
+  events.clear();checks++;System.out.println(fmt("PASS %s", label));
  }
  static MotionEvent event(int device,int source,int action,int buttons,int[] ids,float[] x,float[] y,float wheel) {
   MotionEvent.PointerProperties[] p=new MotionEvent.PointerProperties[ids.length];
@@ -52,7 +53,7 @@ public class StandardCaptureProbe {
    if(channel!=2)throw new AssertionError("wrong channel");
    ByteBuffer b=ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);
    while(b.remaining()>=8){int type=b.getShort()&65535,code=b.getShort()&65535,value=b.getInt();
-    if(type!=0)events.add(type+":"+code+":"+value);
+    if(type!=0)events.add(fmt("%d:%d:%d", type, code, value));
    }return true;
   });
   set("active",true);set("natural",true);set("systemNatural",true);
@@ -88,6 +89,6 @@ public class StandardCaptureProbe {
    expect("relative touchpad direction preference","2:8:-1");
    relative(905,0,0,0,1);expect("mouse wheel unaffected by touchpad preference","2:8:1");
   } finally {capture.close();}
-  System.out.println("ALL "+checks+" Android adapter checks passed");
+  System.out.println(fmt("ALL %d Android adapter checks passed", checks));
  }
 }
