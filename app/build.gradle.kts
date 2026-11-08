@@ -186,7 +186,7 @@ abstract class CopyNativeBinAssetsTask : DefaultTask() {
         }.firstOrNull { it.isFile } ?: error("llvm-strip not found under $prebuilt")
         val outDir = outputDir.get().asFile
         val cmakeDir = cmakeOutputDir.get().asFile
-        val binaries = setOf("droidvm", "daemon", "droidvmd", "pointergrab")
+        val binaries = setOf("droidvm", "daemon", "droidvmd")
         val inputs = expectedAbis.get().flatMap { abi -> binaries.map { name -> File(cmakeDir, "$abi/$name") } }
         inputs.forEach { require(it.isFile && it.length() > 0) { "Missing native binary: $it" } }
         outDir.deleteRecursively()

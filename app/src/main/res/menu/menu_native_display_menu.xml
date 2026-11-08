@@ -15,14 +15,6 @@
         android:id="@+id/menu_pointer_grab"
         android:checkable="true"
         android:title="@string/native_pointer_grab" />
-    <group android:checkableBehavior="single">
-        <item
-            android:id="@+id/menu_pointer_standard"
-            android:title="@string/native_pointer_standard" />
-        <item
-            android:id="@+id/menu_pointer_root"
-            android:title="@string/native_pointer_root" />
-    </group>
     <item
         android:id="@+id/menu_pointer_natural_scroll"
         android:checkable="true"

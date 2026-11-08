@@ -1,185 +1,255 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package cn.classfun.droidvm.ui.vm.display.base;
 
+import android.hardware.input.InputManager;
+import android.os.Handler;
+import android.os.Looper;
+import android.provider.Settings;
+import android.util.Log;
+import android.util.SparseArray;
 import android.view.InputDevice;
 import android.view.MotionEvent;
-import android.util.Log;
-import java.util.Arrays;
-import cn.classfun.droidvm.daemon.input.XiaomiTouchpad;
-import cn.classfun.droidvm.daemon.input.CapturedTouchpadFrames;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
+import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.EvdevEncoder;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.InputForwarder;
 
-/** Android's public pointer-capture API. No su or evdev access on this path. */
-public final class StandardPointerCapture implements CapturedPointerLayout.Handler {
+/** Android capture -> per-device translation -> ordered evdev frames -> existing VM sink. */
+public final class StandardPointerCapture implements CapturedPointerLayout.Handler, InputManager.InputDeviceListener {
+    private static final String TAG = "StandardPointerCapture";
     private final CapturedPointerLayout view;
-    private InputForwarder forwarder;
-    private CapturedTouchpadFrames pad;
-    private boolean active, natural;
-    private int mouseButtons;
-    private boolean seenPad, seenMouse, hoverValid;
-    private int hoverX, hoverY;
-    private float mouseX, mouseY;
-    private final float[] wheelV = new float[2], wheelH = new float[2];
+    private final InputManager inputManager;
+    private final SparseArray<DeviceState> devices = new SparseArray<>();
+    private ExecutorService worker;
+    private PointerEventQueue queue;
+    private PointerButtons buttons;
+    private boolean active, natural, systemNatural;
 
     public StandardPointerCapture(CapturedPointerLayout view) {
         this.view = view;
+        inputManager = view.getContext().getSystemService(InputManager.class);
         view.setCaptureHandler(this);
     }
     public void setSink(InputForwarder.InputSink sink) {
         stop();
-        if (forwarder != null) forwarder.drainAndClose();
-        forwarder = sink == null ? null : new InputForwarder(sink);
-        if (forwarder != null) forwarder.setInputMode(InputMode.MOUSE);
+        if (queue != null) queue.close();
+        if (worker != null) worker.shutdown(); // drain releases to the old sink
+        queue = null; worker = null; buttons = null;
+        if (sink == null) return;
+        worker = Executors.newSingleThreadExecutor(r -> new Thread(r, "CapturedPointer"));
+        queue = new PointerEventQueue(worker, new PointerEventQueue.Output() {
+            private void write(byte[] data) {
+                if (data == null) return;
+                try {
+                    if (!sink.write(NativeDisplay.MOUSE, data)) Log.w(TAG, "Pointer frame was not delivered");
+                } catch (RuntimeException error) { Log.e(TAG, "Pointer write failed", error); }
+            }
+            public void move(int x, int y) { write(EvdevEncoder.encodeMouseMove(x, y)); }
+            public void button(int code, boolean down) { write(EvdevEncoder.encodeMouseButton((short) code, down)); }
+            public void scroll(int v, int h) { write(EvdevEncoder.encodeMouseWheel(v, h)); }
+            public void failed(RuntimeException error) { Log.e(TAG, "Pointer encoding failed", error); }
+        });
+        buttons = new PointerButtons(new PointerEventQueue.Output() {
+            public void move(int x, int y) { queue.move(x, y); }
+            public void button(int code, boolean down) { queue.button(code, down); }
+            public void scroll(int v, int h) { queue.scroll(v, h); }
+        });
     }
     public void start(boolean natural) {
-        if (forwarder == null || !view.hasWindowFocus()) return;
-        // Captured events follow the focused hierarchy. Preserve a focused IME child;
-        // otherwise focus this root so DecorView actually routes captured events here.
-        if (!view.hasFocus()) view.requestFocus();
+        if (queue == null || !view.hasWindowFocus()) return;
+        if (this.natural != natural) resetDevices();
         this.natural = natural;
-        seenPad = seenMouse = false;
-        pad = new CapturedTouchpadFrames(new XiaomiTouchpad.Output() {
-            public void move(int x, int y) { forwarder.sendMouseMove(x, y); }
-            public void button(int code, boolean down) { forwarder.sendPointerButton((short) code, down); }
-            public void scroll(int v, int h) { forwarder.sendScroll(v, h); }
-        }, natural);
+        systemNatural = readSystemNaturalScroll();
+        if (active && view.hasPointerCapture()) return;
+        if (!view.hasFocus() && !view.requestFocus()) return;
+        if (!active && inputManager != null)
+            inputManager.registerInputDeviceListener(this, new Handler(Looper.getMainLooper()));
         active = true;
         view.requestPointerCapture();
     }
     public void stop() {
+        if (active && inputManager != null) inputManager.unregisterInputDeviceListener(this);
+        boolean requested = active;
         active = false;
-        if (view.hasPointerCapture()) view.releasePointerCapture();
-        reset();
+        if (requested || view.hasPointerCapture()) view.releasePointerCapture();
+        resetDevices();
     }
     public void close() { setSink(null); view.setCaptureHandler(null); }
-    public boolean hasCapture() { return view.hasPointerCapture(); }
     public void requestAfterClick(MotionEvent event) {
-        if (active && !hasCapture() && event.isFromSource(InputDevice.SOURCE_MOUSE))
+        if (active && !view.hasPointerCapture() && (event.isFromSource(InputDevice.SOURCE_MOUSE)
+                || event.isFromSource(InputDevice.SOURCE_TOUCHPAD))) {
+            if (!view.hasFocus()) view.requestFocus();
             view.requestPointerCapture();
+        }
     }
     @Override public void onCaptureChanged(boolean captured) {
-        if (!captured) reset();
-        Log.i("StandardPointerCapture", captured ? "Android pointer capture acquired" : "Android pointer capture released");
+        if (!captured) resetDevices();
+        Log.i(TAG, captured ? "Android pointer capture acquired" : "Android pointer capture released");
     }
-    private void reset() {
-        if (pad != null) pad.reset();
-        if (forwarder != null) {
-            buttons(mouseButtons, 0);
-        }
-        mouseButtons = 0; hoverValid = false;
-        mouseX = mouseY = 0;
-        Arrays.fill(wheelV, 0); Arrays.fill(wheelH, 0);
+    private void resetDevices() {
+        for (int i = 0; i < devices.size(); i++) devices.valueAt(i).reset();
+        devices.clear();
+        if (buttons != null) buttons.reset();
+    }
+    @Override public void onInputDeviceAdded(int id) { }
+    @Override public void onInputDeviceChanged(int id) { removeDevice(id); }
+    @Override public void onInputDeviceRemoved(int id) { removeDevice(id); }
+    private void removeDevice(int id) {
+        DeviceState device = devices.get(id);
+        if (device != null) { device.reset(); devices.remove(id); }
+        if (buttons != null) buttons.set(id, 0);
     }
     @Override public boolean onEvent(MotionEvent event) {
-        if (!active || forwarder == null) return false;
-        if (event.getActionMasked() == MotionEvent.ACTION_CANCEL) { reset(); return true; }
-        // OEMs may combine capability bits: raw TOUCHPAD takes precedence over mouse.
-        if (event.isFromSource(InputDevice.SOURCE_TOUCHPAD)) {
-            if (!seenPad) { logSource("touchpad", event); seenPad = true; }
-            return touchpad(event);
-        }
-        if (!event.isFromSource(InputDevice.SOURCE_MOUSE_RELATIVE)
+        if (!active || queue == null) return false;
+        if (!event.isFromSource(InputDevice.SOURCE_TOUCHPAD)
+                && !event.isFromSource(InputDevice.SOURCE_MOUSE_RELATIVE)
                 && !event.isFromSource(InputDevice.SOURCE_MOUSE)) return false;
-        if (!seenMouse) { logSource("mouse", event); seenMouse = true; }
-        int action = event.getActionMasked();
-        if (action == MotionEvent.ACTION_MOVE || action == MotionEvent.ACTION_HOVER_MOVE) {
-            for (int h = 0; h < event.getHistorySize(); h++)
-                mouseMove(event.getHistoricalX(h), event.getHistoricalY(h));
-            mouseMove(event.getX(), event.getY());
+        int id = event.getDeviceId();
+        if (event.getActionMasked() == MotionEvent.ACTION_CANCEL) { removeDevice(id); return true; }
+        boolean raw = event.isFromSource(InputDevice.SOURCE_TOUCHPAD);
+        DeviceState state = devices.get(id);
+        // Sources can change when Android switches its touchpad capture mode.
+        if (state != null && state.raw != raw) { removeDevice(id); state = null; }
+        if (state == null) {
+            state = new DeviceState(id, event.getDevice(), raw);
+            devices.put(id, state);
+            Log.i(TAG, String.format("captured %s source=0x%x device=%s",
+                raw ? "contacts" : state.touchpad ? "touchpad gestures" : "mouse",
+                event.getSource(), event.getDevice() == null ? "unknown" : event.getDevice().getName()));
         }
-        if (action == MotionEvent.ACTION_SCROLL) scroll(event, false);
-        buttons(mouseButtons, event.getButtonState());
-        mouseButtons = event.getButtonState();
+        if (raw) state.contacts(event);
+        else state.relative(event);
         return true;
     }
-    private void logSource(String kind, MotionEvent event) {
-        Log.i("StandardPointerCapture", String.format("captured %s source=0x%x device=%s", kind,
-            event.getSource(), event.getDevice() == null ? "unknown" : event.getDevice().getName()));
+    private boolean readSystemNaturalScroll() {
+        try {
+            return Settings.System.getInt(view.getContext().getContentResolver(), "touchpad_natural_scrolling", 1) != 0;
+        } catch (SecurityException ignored) { return true; }
     }
-    private void mouseMove(float x, float y) {
-        mouseX += x; mouseY += y;
-        int dx = (int) mouseX, dy = (int) mouseY;
-        mouseX -= dx; mouseY -= dy;
-        forwarder.sendMouseMove(dx, dy);
-    }
-    private void scroll(MotionEvent event, boolean touchpad) {
-        int stream = touchpad ? 1 : 0;
-        float sign = touchpad && natural ? -1 : 1;
-        wheelV[stream] += event.getAxisValue(MotionEvent.AXIS_VSCROLL) * sign;
-        wheelH[stream] += event.getAxisValue(MotionEvent.AXIS_HSCROLL) * sign;
-        int v = (int) wheelV[stream], h = (int) wheelH[stream];
-        wheelV[stream] -= v; wheelH[stream] -= h;
-        if (v != 0 || h != 0) forwarder.sendScroll(v, h);
-    }
-    private void buttons(int before, int after) {
-        int[] bits = {1, 2, 4, 8, 16};
-        for (int i = 0; i < bits.length; i++)
-            if (((before ^ after) & bits[i]) != 0)
-                forwarder.sendPointerButton((short) (0x110 + i), (after & bits[i]) != 0);
-    }
-    private boolean touchpad(MotionEvent event) {
-        int action = event.getActionMasked();
-        if (action == MotionEvent.ACTION_SCROLL) {
-            pad.cancelTap(); scroll(event, true);
-            pad.setButtons(event.getButtonState(), event.getEventTime());
-            hoverValid = false;
-            return true;
+    private final class DeviceState implements PointerEventQueue.Output {
+        final int id;
+        final boolean raw, touchpad;
+        final TouchpadGestureRecognizer pad;
+        final float xMin, yMin, xResolution, yResolution;
+        float moveX, moveY, wheelV, wheelH, hoverX, hoverY;
+        boolean hoverValid;
+        int held, rawButtons;
+        DeviceState(int id, InputDevice device, boolean raw) {
+            this.id = id; this.raw = raw;
+            touchpad = raw || device != null && device.supportsSource(InputDevice.SOURCE_TOUCHPAD);
+            pad = raw ? new TouchpadGestureRecognizer(this, natural) : null;
+            InputDevice.MotionRange x = range(device, MotionEvent.AXIS_X);
+            InputDevice.MotionRange y = range(device, MotionEvent.AXIS_Y);
+            xMin = x == null ? 0 : x.getMin(); yMin = y == null ? 0 : y.getMin();
+            xResolution = resolution(x, 100); yResolution = resolution(y, 60);
         }
-        if (action == MotionEvent.ACTION_BUTTON_PRESS || action == MotionEvent.ACTION_BUTTON_RELEASE) {
-            pad.setButtons(event.getButtonState(), event.getEventTime());
-            return true;
+        public void move(int x, int y) { queue.move(x, y); }
+        public void scroll(int v, int h) { queue.scroll(v, h); }
+        public void button(int code, boolean down) {
+            int bit = 1 << (code - 0x110);
+            held = down ? held | bit : held & ~bit;
+            buttons.set(id, held);
         }
-        if (action == MotionEvent.ACTION_HOVER_MOVE || action == MotionEvent.ACTION_HOVER_ENTER
-                || action == MotionEvent.ACTION_HOVER_EXIT) {
-            // Hover is pointer motion, never a new finger contact or a pending tap.
-            for (int h = 0; h < event.getHistorySize(); h++) hover(event, h);
-            hover(event, -1);
-            if (action == MotionEvent.ACTION_HOVER_EXIT) hoverValid = false;
-            pad.setButtons(event.getButtonState(), event.getEventTime());
-            return true;
+        void move(float x, float y) {
+            moveX += x; moveY += y;
+            int dx = (int) moveX, dy = (int) moveY;
+            moveX -= dx; moveY -= dy;
+            queue.move(dx, dy);
         }
-        hoverValid = false;
-        for (int h = 0; h < event.getHistorySize(); h++) sample(event, h);
-        sample(event, -1);
-        return true;
-    }
-    private void hover(MotionEvent event, int history) {
-        float x = history < 0 ? event.getX() : event.getHistoricalX(history);
-        float y = history < 0 ? event.getY() : event.getHistoricalY(history);
-        int nx = normalize(event, MotionEvent.AXIS_X, x), ny = normalize(event, MotionEvent.AXIS_Y, y);
-        float dx = history < 0 ? event.getAxisValue(MotionEvent.AXIS_RELATIVE_X)
-            : event.getHistoricalAxisValue(MotionEvent.AXIS_RELATIVE_X, history);
-        float dy = history < 0 ? event.getAxisValue(MotionEvent.AXIS_RELATIVE_Y)
-            : event.getHistoricalAxisValue(MotionEvent.AXIS_RELATIVE_Y, history);
-        if (dx != 0 || dy != 0) mouseMove(dx, dy);
-        else if (hoverValid) mouseMove((nx - hoverX) * 12f / 34, (ny - hoverY) * 12f / 51);
-        hoverX = nx; hoverY = ny; hoverValid = true;
-    }
-    private void sample(MotionEvent event, int history) {
-        long time = history < 0 ? event.getEventTime() : event.getHistoricalEventTime(history);
-        int action = event.getActionMasked();
-        int up = history < 0 && (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP)
-            ? event.getActionIndex() : -1;
-        int count = event.getPointerCount();
-        int[] ids = new int[count], x = new int[count], y = new int[count];
-        for (int i = 0; i < count; i++) {
-            ids[i] = event.getPointerId(i);
-            float px = history < 0 ? event.getX(i) : event.getHistoricalX(i, history);
-            float py = history < 0 ? event.getY(i) : event.getHistoricalY(i, history);
-            x[i] = normalize(event, MotionEvent.AXIS_X, px);
-            y[i] = normalize(event, MotionEvent.AXIS_Y, py);
+        void relative(MotionEvent event) {
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_MOVE || action == MotionEvent.ACTION_HOVER_MOVE) {
+                for (int h = 0; h < event.getHistorySize(); h++)
+                    move(event.getHistoricalX(h), event.getHistoricalY(h));
+                move(event.getX(), event.getY());
+            }
+            if (action == MotionEvent.ACTION_SCROLL) wheel(event);
+            held = event.getButtonState() & 31;
+            buttons.set(id, held);
         }
-        pad.accept(new CapturedTouchpadFrames.Frame(ids, x, y, up, time, event.getButtonState()));
+        void wheel(MotionEvent event) {
+            // Relative touchpad gestures have already had the system direction applied.
+            // A normal mouse wheel must never inherit the touchpad preference.
+            float sign = !touchpad ? 1 : raw ? (natural ? -1 : 1)
+                : natural == systemNatural ? 1 : -1;
+            for (int h = 0; h <= event.getHistorySize(); h++) {
+                boolean current = h == event.getHistorySize();
+                wheelV += (current ? event.getAxisValue(MotionEvent.AXIS_VSCROLL)
+                    : event.getHistoricalAxisValue(MotionEvent.AXIS_VSCROLL, h)) * sign;
+                wheelH += (current ? event.getAxisValue(MotionEvent.AXIS_HSCROLL)
+                    : event.getHistoricalAxisValue(MotionEvent.AXIS_HSCROLL, h)) * sign;
+            }
+            int v = (int) wheelV, h = (int) wheelH;
+            wheelV -= v; wheelH -= h;
+            queue.scroll(v, h);
+        }
+        void contacts(MotionEvent event) {
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_SCROLL) {
+                pad.cancelTap(); wheel(event); setRawButtons(event.getButtonState()); hoverValid = false;
+            } else if (action == MotionEvent.ACTION_BUTTON_PRESS || action == MotionEvent.ACTION_BUTTON_RELEASE) {
+                setRawButtons(event.getButtonState());
+            } else if (action == MotionEvent.ACTION_HOVER_MOVE || action == MotionEvent.ACTION_HOVER_ENTER
+                    || action == MotionEvent.ACTION_HOVER_EXIT) {
+                for (int h = 0; h < event.getHistorySize(); h++) hover(event, h);
+                hover(event, -1);
+                if (action == MotionEvent.ACTION_HOVER_EXIT) hoverValid = false;
+                setRawButtons(event.getButtonState());
+            } else if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_UP
+                    || action == MotionEvent.ACTION_POINTER_DOWN || action == MotionEvent.ACTION_POINTER_UP
+                    || action == MotionEvent.ACTION_MOVE) {
+                hoverValid = false;
+                for (int h = 0; h < event.getHistorySize(); h++) sample(event, h);
+                sample(event, -1);
+            }
+        }
+        void setRawButtons(int next) { rawButtons = next; pad.setButtons(next); }
+        void hover(MotionEvent event, int history) {
+            float x = ((history < 0 ? event.getX() : event.getHistoricalX(history)) - xMin) / xResolution;
+            float y = ((history < 0 ? event.getY() : event.getHistoricalY(history)) - yMin) / yResolution;
+            float dx = history < 0 ? event.getAxisValue(MotionEvent.AXIS_RELATIVE_X)
+                : event.getHistoricalAxisValue(MotionEvent.AXIS_RELATIVE_X, history);
+            float dy = history < 0 ? event.getAxisValue(MotionEvent.AXIS_RELATIVE_Y)
+                : event.getHistoricalAxisValue(MotionEvent.AXIS_RELATIVE_Y, history);
+            if (dx != 0 || dy != 0) move(dx, dy);
+            else if (hoverValid) move((x - hoverX) * 12, (y - hoverY) * 12);
+            hoverX = x; hoverY = y; hoverValid = true;
+        }
+        void sample(MotionEvent event, int history) {
+            int action = event.getActionMasked();
+            int up = history < 0 && (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP)
+                ? event.getActionIndex() : -1;
+            long fingers = 0;
+            float x = 0, y = 0;
+            int count = 0;
+            for (int i = 0; i < event.getPointerCount(); i++) {
+                int tool = event.getToolType(i);
+                if (i == up || tool != MotionEvent.TOOL_TYPE_FINGER && tool != MotionEvent.TOOL_TYPE_UNKNOWN) continue;
+                fingers |= 1L << event.getPointerId(i); count++;
+                x += ((history < 0 ? event.getX(i) : event.getHistoricalX(i, history)) - xMin) / xResolution;
+                y += ((history < 0 ? event.getY(i) : event.getHistoricalY(i, history)) - yMin) / yResolution;
+            }
+            pad.frame(fingers, count == 0 ? 0 : x / count, count == 0 ? 0 : y / count,
+                history < 0 ? event.getEventTime() : event.getHistoricalEventTime(history),
+                history < 0 ? event.getButtonState() : rawButtons);
+            if (history < 0) rawButtons = event.getButtonState();
+        }
+        void reset() {
+            if (pad != null) pad.reset();
+            held = 0; buttons.set(id, 0);
+        }
     }
-    private int normalize(MotionEvent event, int axis, float value) {
-        boolean x = axis == MotionEvent.AXIS_X;
-        InputDevice device = event.getDevice();
-        InputDevice.MotionRange range = device == null ? null : device.getMotionRange(axis, InputDevice.SOURCE_TOUCHPAD);
-        if (range == null && device != null) range = device.getMotionRange(axis);
-        if (range == null) return Math.round(value);
-        float resolution = range.getResolution();
-        if (resolution <= 0) resolution = range.getRange() / (x ? 94f : 42f);
-        return resolution > 0 ? Math.round((value - range.getMin()) * (x ? 34 : 51) / resolution)
-            : Math.round(value);
+    private static InputDevice.MotionRange range(InputDevice device, int axis) {
+        if (device == null) return null;
+        InputDevice.MotionRange range = device.getMotionRange(axis, InputDevice.SOURCE_TOUCHPAD);
+        return range == null ? device.getMotionRange(axis) : range;
+    }
+    private static float resolution(InputDevice.MotionRange range, float fallbackSizeMm) {
+        if (range == null) return 1;
+        if (range.getResolution() > 0) return range.getResolution();
+        // Android does not require physical dimensions. Use a generic nominal pad size only
+        // when the driver omits resolution; never match a vendor, product, or device name.
+        return range.getRange() > 0 ? range.getRange() / fallbackSizeMm : 1;
     }
 }

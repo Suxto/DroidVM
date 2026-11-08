@@ -1691,6 +1691,4 @@
     <string name="vm_delete_error">删除失败或无法确认结果，已保留磁盘文件。请刷新虚拟机列表后再试。</string>
     <string name="native_pointer_grab">捕获鼠标 / 触控板（实验）</string>
     <string name="native_pointer_natural_scroll">触控板自然滚动</string>
-    <string name="native_pointer_standard">标准捕获（无需 Root）</string>
-    <string name="native_pointer_root">Root 独占捕获（小米触控板）</string>
 </resources>

@@ -951,8 +951,6 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         var popup = new MaterialMenu(this, fabMenu);
         popup.inflate(R.menu.menu_native_display_menu);
         popup.getMenu().findItem(R.id.menu_pointer_grab).setChecked(pointerGrab.isEnabled());
-        popup.getMenu().findItem(pointerGrab.isRootMode()
-            ? R.id.menu_pointer_root : R.id.menu_pointer_standard).setChecked(true);
         popup.getMenu().findItem(R.id.menu_pointer_natural_scroll).setChecked(pointerGrab.isNaturalScroll());
         var header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
@@ -1003,9 +1001,6 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         int id = item.getItemId();
         if (id == R.id.menu_pointer_grab) {
             pointerGrab.setEnabled(!pointerGrab.isEnabled());
-            return true;
-        } else if (id == R.id.menu_pointer_standard || id == R.id.menu_pointer_root) {
-            pointerGrab.setRootMode(id == R.id.menu_pointer_root);
             return true;
         } else if (id == R.id.menu_pointer_natural_scroll) {
             pointerGrab.setNaturalScroll(!pointerGrab.isNaturalScroll());

@@ -434,9 +434,6 @@ public final class InputForwarder {
         });
     }
 
-    /** Retires a relative-pointer-only forwarder after queued button releases have drained. */
-    public void drainAndClose() { worker.shutdown(); }
-
     /** Shuts down the worker. Sockets are owned by the root process, not closed here. */
     public void close() {
         worker.shutdownNow();

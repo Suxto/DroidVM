@@ -1749,6 +1749,4 @@
     <string name="vm_delete_error">Deletion failed or could not be confirmed. Disk files were kept. Reload the VM list before trying again.</string>
     <string name="native_pointer_grab">Capture mouse / touchpad (experimental)</string>
     <string name="native_pointer_natural_scroll">Natural touchpad scrolling</string>
-    <string name="native_pointer_standard">Standard capture (no root)</string>
-    <string name="native_pointer_root">Root exclusive capture (Xiaomi pad)</string>
 </resources>
