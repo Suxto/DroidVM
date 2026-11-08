@@ -9,7 +9,7 @@ public final class TouchpadGestureRecognizer {
     private final PointerEventQueue.Output out;
     private final boolean natural;
     private long fingers, started;
-    private int count, maxCount, buttons, primary;
+    private int count, maxCount, buttons, primary, emittedButtons;
     private float lastX, lastY, travel, moveX, moveY, wheelX, wheelY;
     private boolean clicked;
     public TouchpadGestureRecognizer(PointerEventQueue.Output out, boolean natural) {
@@ -49,18 +49,22 @@ public final class TouchpadGestureRecognizer {
     }
     public void setButtons(int next) { updateButtons(next, count); }
     private void updateButtons(int next, int contacts) {
+        next &= 31;
         if (((buttons ^ next) & 1) != 0) {
             if ((next & 1) != 0) {
                 primary = contacts >= 2 ? RIGHT : LEFT;
-                clicked = true; out.button(primary, true);
-            } else {
-                out.button(primary, false); primary = 0;
-            }
+                clicked = true;
+            } else primary = 0;
         }
         if (((buttons | next) & ~1) != 0) cancelTap();
-        for (int bit = 1; bit < 5; bit++)
-            if (((buttons ^ next) & (1 << bit)) != 0)
-                out.button(LEFT + bit, (next & (1 << bit)) != 0);
+        // Remapped primary and explicit secondary can both own the guest right button.
+        // Emit their union so releasing either source cannot release the other source.
+        int nextEmitted = (next & ~1) | (primary == 0 ? 0 : 1 << (primary - LEFT));
+        int changed = emittedButtons ^ nextEmitted;
+        emittedButtons = nextEmitted;
+        for (int bit = 0; bit < 5; bit++)
+            if ((changed & (1 << bit)) != 0)
+                out.button(LEFT + bit, (nextEmitted & (1 << bit)) != 0);
         buttons = next;
     }
     private void clearRemainders() { moveX = moveY = wheelX = wheelY = 0; }

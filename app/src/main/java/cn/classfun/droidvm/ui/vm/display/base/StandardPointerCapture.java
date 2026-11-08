@@ -75,8 +75,12 @@ public final class StandardPointerCapture implements CapturedPointerLayout.Handl
         if (requested || view.hasPointerCapture()) view.releasePointerCapture();
         resetDevices();
     }
-    public void close() {
+    public void close() { close(null); }
+    /** Complete cleanup on the pointer worker after all queued releases have drained. */
+    public void close(Runnable afterDrain) {
+        if (closed) return;
         setSink(null); closed = true;
+        if (afterDrain != null) worker.execute(afterDrain);
         worker.shutdown(); // drain the old sink's releases before retiring the worker
         view.setCaptureHandler(null);
     }

@@ -35,8 +35,26 @@ public class PointerEventQueueTest {
         assertEquals(List.of("button 272 true", "button 272 false"), events);
     }
     @Test public void oppositeDeltasDoNotEmitEmptyFrames() {
-        queue.move(5, 6); queue.move(-5, -6); queue.scroll(1, 0); queue.scroll(-1, 0); drain();
+        queue.move(5, 6); queue.move(-5, -6); drain();
         assertTrue(events.isEmpty());
+    }
+    @Test public void oppositeWheelDirectionsAreDeliveredInOrder() {
+        queue.scroll(1, 0); queue.scroll(-1, 0); drain();
+        assertEquals(List.of("scroll 1 0", "scroll -1 0"), events);
+    }
+    @Test public void horizontalReversalIsABarrierEvenIfVerticalDirectionMatches() {
+        queue.scroll(1, 2); queue.scroll(1, -1); drain();
+        assertEquals(List.of("scroll 1 2", "scroll 1 -1"), events);
+    }
+    @Test public void reversingAtTheTopOfAPageStillScrollsDown() {
+        int[] position = {0};
+        var q = new PointerEventQueue(worker::addLast, new PointerEventQueue.Output() {
+            public void move(int x, int y) { }
+            public void button(int code, boolean down) { }
+            public void scroll(int v, int h) { position[0] = Math.max(0, position[0] - v); }
+        });
+        q.scroll(1, 0); q.scroll(-1, 0); drain();
+        assertEquals(1, position[0]);
     }
     @Test public void acceptsNewWorkAfterTheQueueEmpties() {
         queue.move(1, 0); drain(); queue.move(2, 0); drain();

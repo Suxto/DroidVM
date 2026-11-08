@@ -71,9 +71,13 @@ public final class PointerCaptureController {
         // Run after the menu/focus callbacks; no root-helper handover delay is needed.
         main.post(acquire);
     }
-    public void close() {
+    public void close() { close(null); }
+    /** afterDrain runs on the capture worker; it must not update the UI. */
+    public void close(Runnable afterDrain) {
+        if (closed) return;
         closed = true;
         main.removeCallbacks(acquire);
-        if (standard != null) standard.close();
+        if (standard != null) standard.close(afterDrain);
+        else if (afterDrain != null) afterDrain.run();
     }
 }

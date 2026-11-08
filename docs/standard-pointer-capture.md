@@ -29,10 +29,12 @@ pad is assumed, so sensitivity on such devices may need future calibration.
 - Requests are posted after focus/menu callbacks, without a fixed handover delay.
 - Focus loss, pause, cancellation, disconnect, sink replacement, and closing the
   page release held buttons. Shutdown drains releases to the previous sink.
+  The display page closes that sink from an after-drain callback on the pointer
+  worker, rather than closing it immediately or waiting on the UI thread.
 - Each input device has independent fractional movement, wheel, hover, and gesture
   state. Guest buttons are the union of all devices' held buttons.
 - One pointer worker sends frames. Only adjacent motion/wheel frames coalesce;
-  they cannot move across button transitions. A blocked transport therefore does
+  wheel direction changes and button transitions are barriers. A blocked transport therefore does
   not move pre-press motion into a drag or post-release motion back into it.
 
 Pure JVM regression tests cover raw gestures, multi-device button ownership,
@@ -49,8 +51,9 @@ python scripts/validation/check_standard_capture.py --android-jar /sdk/platforms
 
 It runs production capture/encoding code with a recording sink in a separate
 Android process. It does not request capture or inject input into the running VM.
-Only the unrelated `InputForwarder` interface holder, channel constant holder, and
-compile-time annotations are stubbed. This checks adapter behavior, not window
+Only unrelated interface/constant holders, the root-service method signature,
+the formatting helper, and compile-time annotations are stubbed. The shutdown
+regression additionally uses the production `DirectInputSink`. This checks adapter behavior, not window
 focus routing; actual capture and VM delivery require the hardware checks below.
 
 ## Verified build: 382caeb
@@ -77,6 +80,23 @@ The repository's pre-existing static-check failures remain (ASCII, translation,
 string-concatenation, and parameter-count checks). The capture changes added no
 new diagnostics in these checks. Other brands, real hotplug, and physical gesture
 feel have not been validated by this regression run.
+
+## Merge-review regressions
+
+Three deterministic counterexamples found after the initial validation are now
+covered by the checked-in tests and the on-device `CaptureRegressionProbe`:
+
+- Block the pointer worker after a guest button-down, close the capture owner,
+  then unblock it: guest button-up must arrive before `DirectInputSink.close()`.
+  The page supplies sink closure as the after-drain callback.
+- Scroll upward at the top boundary and then downward: both direction segments
+  must be delivered, so the downward movement is not canceled by coalescing.
+- Hold remapped two-finger primary and explicit secondary together: either
+  source may release first, and the guest right button remains held until both
+  are released. Only one guest press and one final release are emitted.
+
+After these fixes, 35 JVM tests and all 15 on-device adapter/regression checks
+passed. The standalone probes use recording sinks and do not inject VM input.
 
 References:
 - https://developer.android.com/reference/android/view/View#requestPointerCapture()

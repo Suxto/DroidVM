@@ -82,4 +82,26 @@ public class TouchpadGestureRecognizerTest {
         pad.frame(1, 10, 10, 100, 0); pad.reset(); pad.frame(0, 0, 0, 180, 0);
         assertTrue(events.isEmpty());
     }
+    @Test public void remappedPrimaryReleasePreservesExplicitSecondary() {
+        pad.frame(3, 10, 10, 100, 1);
+        pad.setButtons(3); pad.setButtons(2);
+        assertEquals(List.of("button 273 true"), events);
+        pad.setButtons(0);
+        assertEquals(List.of("button 273 true", "button 273 false"), events);
+    }
+    @Test public void explicitSecondaryReleasePreservesRemappedPrimary() {
+        pad.frame(3, 10, 10, 100, 1);
+        pad.setButtons(3); pad.setButtons(1);
+        assertEquals(List.of("button 273 true"), events);
+        pad.setButtons(0);
+        assertEquals(List.of("button 273 true", "button 273 false"), events);
+    }
+    @Test public void resettingOverlappingRightButtonOwnersReleasesOnlyOnce() {
+        pad.frame(3, 10, 10, 100, 1); pad.setButtons(3); pad.reset(); pad.reset();
+        assertEquals(List.of("button 273 true", "button 273 false"), events);
+    }
+    @Test public void ordinaryPrimaryAndSecondaryRemainIndependent() {
+        pad.frame(1, 10, 10, 100, 1); pad.setButtons(3); pad.setButtons(2); pad.setButtons(0);
+        assertEquals(List.of("button 272 true", "button 273 true", "button 272 false", "button 273 false"), events);
+    }
 }

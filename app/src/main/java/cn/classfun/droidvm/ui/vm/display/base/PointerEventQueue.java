@@ -31,13 +31,17 @@ public final class PointerEventQueue {
     private synchronized void add(int kind, int x, int y) {
         if (closed) return;
         Event tail = pending.peekLast();
-        if (kind != BUTTON && tail != null && tail.kind == kind) {
+        if (tail != null && tail.kind == kind && (kind == MOVE
+                || kind == SCROLL && sameDirection(tail.x, x) && sameDirection(tail.y, y))) {
             tail.x += x; tail.y += y;
         } else pending.addLast(new Event(kind, x, y));
         if (!scheduled) {
             scheduled = true;
             executor.execute(this::drain);
         }
+    }
+    private static boolean sameDirection(int before, int after) {
+        return before == 0 || after == 0 || (before > 0) == (after > 0);
     }
     private void drain() {
         for (;;) {

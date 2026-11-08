@@ -30,11 +30,17 @@ def main():
             "package androidx.annotation; public @interface Nullable {}",
         "cn/classfun/droidvm/lib/store/vm/NativeDisplay.java":
             "package cn.classfun.droidvm.lib.store.vm; "
-            "public class NativeDisplay { public static final int MOUSE=2; }",
+            "public class NativeDisplay { public static final int MOUSE=2,CHANNEL_COUNT=4; }",
         "cn/classfun/droidvm/ui/vm/display/nativedisplay/input/InputForwarder.java":
             "package cn.classfun.droidvm.ui.vm.display.nativedisplay.input; "
             "public class InputForwarder { public interface InputSink { "
             "boolean write(int channel,byte[] data); } }",
+        "cn/classfun/droidvm/lib/utils/StringUtils.java":
+            "package cn.classfun.droidvm.lib.utils; public class StringUtils { "
+            "public static String fmt(String s,Object...args){return String.format(s,args);} }",
+        "cn/classfun/droidvm/display/INativeDisplayRootService.java":
+            "package cn.classfun.droidvm.display; public interface INativeDisplayRootService { "
+            "boolean writeInput(String vm,String screen,int channel,byte[] data) throws Exception; }",
     }
     for relative, contents in stubs.items():
         path = source / relative
@@ -42,12 +48,13 @@ def main():
         path.write_text(contents, encoding="utf8")
     java = repo / "app/src/main/java/cn/classfun/droidvm/ui/vm/display"
     files = list(source.rglob("*.java"))
-    files.append(Path(__file__).with_name("StandardCaptureProbe.java"))
+    files.extend(Path(__file__).parent.glob("*Probe.java"))
     files.extend(java / "base" / name for name in (
         "CapturedPointerLayout.java", "StandardPointerCapture.java",
         "PointerEventQueue.java", "PointerButtons.java", "TouchpadGestureRecognizer.java",
     ))
     files.append(java / "nativedisplay/input/EvdevEncoder.java")
+    files.append(java / "nativedisplay/input/DirectInputSink.java")
     subprocess.run([
         "javac", "--release", "17", "-cp", str(args.android_jar),
         "-d", str(classes), *map(str, files),
@@ -64,9 +71,10 @@ def main():
     ], check=True)
     remote = "/data/local/tmp/standard-capture-probe.zip"
     subprocess.run([args.adb, "push", str(dex), remote], check=True)
-    subprocess.run([
-        args.adb, "shell", f"CLASSPATH={remote} app_process /system/bin StandardCaptureProbe",
-    ], check=True)
+    for probe in ("StandardCaptureProbe", "CaptureRegressionProbe"):
+        subprocess.run([
+            args.adb, "shell", f"CLASSPATH={remote} app_process /system/bin {probe}",
+        ], check=True)
 
 
 if __name__ == "__main__":

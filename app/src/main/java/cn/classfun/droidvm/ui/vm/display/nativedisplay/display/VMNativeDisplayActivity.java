@@ -1200,7 +1200,12 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     protected void onDestroy() {
         super.onDestroy();
         if (keyboardGrab != null) keyboardGrab.close();
-        if (pointerGrab != null) pointerGrab.close();
+        // Keep the old sink alive until the capture worker has sent its final releases.
+        // Waiting on the UI thread would block lifecycle callbacks on a slow transport.
+        var retiringSink = directSink;
+        directSink = null;
+        if (pointerGrab != null) pointerGrab.close(retiringSink == null ? null : retiringSink::close);
+        else if (retiringSink != null) retiringSink.close();
         if (displaySource != null) {
             displaySource.shutdown();
             displaySource = null;
@@ -1208,10 +1213,6 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         if (inputForwarder != null) {
             inputForwarder.close();
             inputForwarder = null;
-        }
-        if (directSink != null) {
-            directSink.close();
-            directSink = null;
         }
         if (displayAttach != null) {
             displayAttach.stop();
