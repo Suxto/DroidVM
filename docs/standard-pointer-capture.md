@@ -40,6 +40,44 @@ coalescing, press/release ordering, transport failure, and draining on close.
 Android device validation additionally needs focus acquisition/recovery, real
 captured MotionEvents, hotplug, and VM-side receipt of button/wheel frames.
 
+The standalone adapter probe is reproducible with an Android SDK platform jar,
+the build tools' D8 jar, a JDK, and an adb-connected device with a touchpad:
+
+```sh
+python scripts/validation/check_standard_capture.py --android-jar /sdk/platforms/android-35/android.jar --d8-jar /sdk/build-tools/35.0.0/lib/d8.jar
+```
+
+It runs production capture/encoding code with a recording sink in a separate
+Android process. It does not request capture or inject input into the running VM.
+Only the unrelated `InputForwarder` interface holder, channel constant holder, and
+compile-time annotations are stubbed. This checks adapter behavior, not window
+focus routing; actual capture and VM delivery require the hardware checks below.
+
+## Verified build: 382caeb
+
+- 28 JVM regression tests passed; complete Android unit tests passed in CI.
+- Debug and Release APK builds passed; the signed debug APK was installed over
+  the previous build with the persistent fork signing key.
+- 12 on-device MotionEvent adapter checks passed, including history, fractional
+  wheel isolation, raw contact index changes, cancellation, and separate mouse
+  and touchpad wheel direction.
+- Simulated evdev input on the tablet's physical touchpad node traversed Android
+  capture and reached the VM mouse socket: movement, left tap, two-finger right
+  tap, drag press/motion/release ordering, and scrolling. Toggling natural scroll
+  reversed the delivered wheel sign for the same simulated finger movement.
+- Backgrounding released capture; returning reacquired it. Volume Down released
+  capture, and the menu could enable it again. The backend selector was absent.
+- APK inspection confirmed no pointergrab helper. No pointergrab process ran.
+  The VM stayed running through the update; crosvm and libvirglrenderer hashes
+  matched their pre-update values.
+
+Build: https://github.com/Suxto/DroidVM/actions/runs/42491641151
+
+The repository's pre-existing static-check failures remain (ASCII, translation,
+string-concatenation, and parameter-count checks). The capture changes added no
+new diagnostics in these checks. Other brands, real hotplug, and physical gesture
+feel have not been validated by this regression run.
+
 References:
 - https://developer.android.com/reference/android/view/View#requestPointerCapture()
 - https://developer.android.com/reference/android/view/InputDevice#SOURCE_TOUCHPAD
