@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package cn.classfun.droidvm.ui.vm.display.base;
 
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.hardware.input.InputManager;
 import android.os.Handler;
 import android.os.Looper;
@@ -20,20 +22,58 @@ public final class StandardPointerCapture implements CapturedPointerLayout.Handl
     private static final String TAG = "StandardPointerCapture";
     private final CapturedPointerLayout view;
     private final InputManager inputManager;
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private final Runnable acquire = this::start;
     private final SparseArray<DeviceState> devices = new SparseArray<>();
     // Reuse one worker across sink replacement so old releases cannot arrive after new presses.
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> new Thread(r, "CapturedPointer"));
     private PointerEventQueue queue;
     private PointerButtons buttons;
+    private boolean enabled, resumed, focused;
     private boolean active, natural, systemNatural, closed;
 
     public StandardPointerCapture(CapturedPointerLayout view) {
         this.view = view;
-        inputManager = view.getContext().getSystemService(InputManager.class);
+        Context context = view.getContext();
+        inputManager = context.getSystemService(InputManager.class);
         view.setCaptureHandler(this);
+    }
+    public boolean isEnabled() { return enabled; }
+    private SharedPreferences preferences() {
+        return view.getContext().getSharedPreferences("pointer-grab", Context.MODE_PRIVATE);
+    }
+    public boolean isNaturalScroll() { return preferences().getBoolean("natural_scroll", true); }
+    public void setNaturalScroll(boolean value) {
+        if (value == isNaturalScroll()) return;
+        preferences().edit().putBoolean("natural_scroll", value).apply();
+        updateCapture();
+    }
+    public void setEnabled(boolean value) {
+        if (enabled == value) return;
+        enabled = value;
+        updateCapture();
+    }
+    public void setResumed(boolean value) {
+        if (resumed == value) return;
+        resumed = value;
+        updateCapture();
+    }
+    public void setFocused(boolean value) {
+        if (focused == value) return;
+        focused = value;
+        updateCapture();
+    }
+    private boolean ready() {
+        return !closed && enabled && resumed && focused && queue != null;
+    }
+    private void updateCapture() {
+        main.removeCallbacks(acquire);
+        if (ready()) main.post(acquire); // Let menu and window focus callbacks finish first.
+        else stop();
     }
     public void setSink(InputForwarder.InputSink sink) {
         if (closed) return;
+        main.removeCallbacks(acquire);
         stop();
         if (queue != null) queue.close();
         queue = null; buttons = null;
@@ -55,20 +95,22 @@ public final class StandardPointerCapture implements CapturedPointerLayout.Handl
             public void button(int code, boolean down) { queue.button(code, down); }
             public void scroll(int v, int h) { queue.scroll(v, h); }
         });
+        updateCapture();
     }
-    public void start(boolean natural) {
-        if (queue == null || !view.hasWindowFocus()) return;
+    private void start() {
+        if (!ready() || !view.hasWindowFocus()) return;
+        boolean natural = isNaturalScroll();
         if (this.natural != natural) resetDevices();
         this.natural = natural;
         systemNatural = readSystemNaturalScroll();
         if (active && view.hasPointerCapture()) return;
         if (!view.hasFocus() && !view.requestFocus()) return;
         if (!active && inputManager != null)
-            inputManager.registerInputDeviceListener(this, new Handler(Looper.getMainLooper()));
+            inputManager.registerInputDeviceListener(this, main);
         active = true;
         view.requestPointerCapture();
     }
-    public void stop() {
+    private void stop() {
         if (active && inputManager != null) inputManager.unregisterInputDeviceListener(this);
         boolean requested = active;
         active = false;
@@ -85,7 +127,7 @@ public final class StandardPointerCapture implements CapturedPointerLayout.Handl
         view.setCaptureHandler(null);
     }
     public void requestAfterClick(MotionEvent event) {
-        if (active && !view.hasPointerCapture() && (event.isFromSource(InputDevice.SOURCE_MOUSE)
+        if (ready() && active && !view.hasPointerCapture() && (event.isFromSource(InputDevice.SOURCE_MOUSE)
                 || event.isFromSource(InputDevice.SOURCE_TOUCHPAD))) {
             if (!view.hasFocus()) view.requestFocus();
             view.requestPointerCapture();

@@ -60,7 +60,7 @@ import cn.classfun.droidvm.lib.ui.ImeInsetsExempt;
 import cn.classfun.droidvm.lib.ui.MaterialMenu;
 import cn.classfun.droidvm.ui.vm.display.base.DaemonDisplayAttach;
 import cn.classfun.droidvm.ui.vm.display.base.PhysicalKeyboardGrab;
-import cn.classfun.droidvm.ui.vm.display.base.PointerCaptureController;
+import cn.classfun.droidvm.ui.vm.display.base.StandardPointerCapture;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayChromeController;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayExtraKeysPanel;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayKeyboardMenuRow;
@@ -274,7 +274,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     // Asks the daemon to take the host's physical keyboard for this console while it is in
     // front and no IME wants it; see PhysicalKeyboardGrab for the whole of the rule.
     private PhysicalKeyboardGrab keyboardGrab;
-    private PointerCaptureController pointerGrab;
+    private StandardPointerCapture pointerGrab;
     // Bits of the lamp masks the daemon sends, which are the Linux LED_* codes: NUML 0, CAPSL 1,
     // SCROLLL 2.
     private static final int LED_MASK_NUM = 1;
@@ -300,10 +300,8 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         // Before the views: applyInitial() runs while they are being built and tells this
         // the keyboard mode it starts in.
         keyboardGrab = new PhysicalKeyboardGrab(vmId, () -> screenId, screenInputEnabled);
-        pointerGrab = new PointerCaptureController(this);
-
         bindViews();
-        pointerGrab.setView(findViewById(R.id.main));
+        pointerGrab = new StandardPointerCapture(findViewById(R.id.main));
         toolbar.setTitle(vmName.isEmpty() ? getString(R.string.native_display_title) : vmName);
         toolbar.setNavigationOnClickListener(v -> finish());
         setupViews();
