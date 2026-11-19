@@ -1910,4 +1910,6 @@
     <string name="hugepage_operation_force_clear_message">This drops only the local \"unresolved\" marker. It does not retry, undo or confirm the original operation; the module keeps the state it already has. Use it when the original request can no longer be queried. Observed module state:</string>
     <string name="hugepage_operation_force_cleared">Pending marker cleared. Check the module state before changing huge-page settings.</string>
     <string name="hugepage_operation_reconciled">Previous request settled from the module state: %1$s</string>
+    <string name="native_pointer_grab">Capture mouse / touchpad</string>
+    <string name="native_pointer_natural_scroll">Natural touchpad scrolling</string>
 </resources>

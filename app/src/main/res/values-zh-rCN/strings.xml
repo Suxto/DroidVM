@@ -1852,4 +1852,6 @@
     <string name="hugepage_operation_force_clear_message">此操作只清除本地的“未决”标记，不会重试、撤销或确认原操作；模块保持当前状态。仅在原请求已无法查询时使用。当前模块状态：</string>
     <string name="hugepage_operation_force_cleared">未决标记已清除。修改大页设置前请先核对模块状态。</string>
     <string name="hugepage_operation_reconciled">上一条请求已按实际状态判定：%1$s</string>
+    <string name="native_pointer_grab">捕获鼠标 / 触控板</string>
+    <string name="native_pointer_natural_scroll">触控板自然滚动</string>
 </resources>

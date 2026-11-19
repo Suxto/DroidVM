@@ -65,6 +65,7 @@ import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.ui.DragTouchListener;
 import cn.classfun.droidvm.lib.ui.ImeInsetsExempt;
 import cn.classfun.droidvm.ui.vm.display.base.ConsoleInput;
+import cn.classfun.droidvm.ui.vm.display.base.StandardPointerCapture;
 import cn.classfun.droidvm.ui.vm.display.base.ConsoleMenu;
 import cn.classfun.droidvm.ui.vm.display.base.ConsoleWorkspace;
 import cn.classfun.droidvm.ui.vm.display.base.DaemonDisplayAttach;
@@ -203,6 +204,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     // The pointer mode (shared with the VNC console), the path to the daemon, the mouse buttons:
     // the input both consoles send alike.
     private ConsoleInput input;
+    private StandardPointerCapture pointerGrab;
     private ConsoleMenu menu;
     private static final String INPUT_PREFS = "droidvm_prefs";
     private static final String KEY_DISPLAY_TURNS = "display_quarter_turns_";
@@ -338,6 +340,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         input = new ConsoleInput(this, vmId, () -> screenId, screenInputEnabled);
 
         bindViews();
+        pointerGrab = input.capturePointer(findViewById(R.id.main));
         toolbar.setTitle(vmName.isEmpty() ? getString(R.string.native_display_title) : vmName);
         toolbar.setNavigationOnClickListener(v -> finish());
         setupViews();
@@ -370,6 +373,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
                     // The grab has no such fallback: the daemon is the only process that can hold
                     // it, and it has already dropped it with the token.
                     keyboardGrab.setService(null);
+                    input.detach();
                 }
             });
         displayAttach.start();
@@ -879,6 +883,8 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     // Button presses are ALWAYS consumed - an unhandled BUTTON_SECONDARY press is what makes the
     // framework synthesize a BACK key, which must never fire inside the VM display.
     private boolean onSurfaceGenericMotion(View v, MotionEvent event) {
+        if (event.getActionMasked() == MotionEvent.ACTION_BUTTON_PRESS)
+            pointerGrab.requestAfterClick(event);
         // A stylus' barrel buttons are the pen's, not a mouse's right and middle buttons.
         int genericAction = event.getActionMasked();
         if ((genericAction == MotionEvent.ACTION_BUTTON_PRESS
@@ -945,6 +951,11 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
 
     @Override
     public boolean dispatchKeyEvent(@NonNull KeyEvent event) {
+        if (pointerGrab != null && pointerGrab.isEnabled()
+                && event.getKeyCode() == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) pointerGrab.setEnabled(false);
+            return true;
+        }
         int keyCode = event.getKeyCode();
         if (input.swallowsBack(event)) return true;
         if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN)
@@ -1127,6 +1138,25 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     }
 
     private final ConsoleMenu.Host menuHost = new ConsoleMenu.Host() {
+        @Override
+        public void prepareMenu(@NonNull android.view.Menu menu) {
+            menu.findItem(R.id.menu_pointer_grab).setChecked(pointerGrab.isEnabled());
+            menu.findItem(R.id.menu_pointer_natural_scroll).setChecked(pointerGrab.isNaturalScroll());
+        }
+
+        @Override
+        public boolean onItem(@NonNull MenuItem item) {
+            if (item.getItemId() == R.id.menu_pointer_grab) {
+                pointerGrab.setEnabled(!pointerGrab.isEnabled());
+                return true;
+            }
+            if (item.getItemId() == R.id.menu_pointer_natural_scroll) {
+                pointerGrab.setNaturalScroll(!pointerGrab.isNaturalScroll());
+                return true;
+            }
+            return false;
+        }
+
         @Override
         public void selectInputMode(@NonNull InputMode mode) {
             input.setMode(mode);
@@ -1426,6 +1456,12 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     }
 
     @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (pointerGrab != null) pointerGrab.setFocused(hasFocus);
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
         requestRefreshRate(guestRefreshRate);
@@ -1436,6 +1472,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         // from eating multi-finger input meant for the guest (see SystemGestureGuard).
         SystemGestureGuard.enterDisplay();
         keyboardGrab.setResumed(true);
+        pointerGrab.setResumed(true);
         resumed = true;
         updateMotionPicture();
         if (motionSensor != null) motionSensor.start();
@@ -1496,6 +1533,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         GamePerfHint.exitGameplay(this);
         SystemGestureGuard.exitDisplay();
         keyboardGrab.setResumed(false);
+        pointerGrab.setResumed(false);
         resumed = false;
         // crosvm goes back to the phone's own sensors about a second later.
         if (motionSensor != null) motionSensor.stop();

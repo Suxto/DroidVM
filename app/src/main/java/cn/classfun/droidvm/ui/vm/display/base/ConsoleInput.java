@@ -61,6 +61,15 @@ public final class ConsoleInput {
     @Nullable
     private volatile DirectInputSink direct;
     private long lastMouseButtonMs;
+    @Nullable
+    private StandardPointerCapture pointerCapture;
+
+    /** Capture the host pointer in this console's focused view. */
+    public StandardPointerCapture capturePointer(CapturedPointerLayout view) {
+        pointerCapture = new StandardPointerCapture(view);
+        if (direct != null) pointerCapture.setSink(direct);
+        return pointerCapture;
+    }
 
     /**
      * @param screenInputEnabled this screen's input switch: off, the absolute modes ride devices
@@ -135,14 +144,18 @@ public final class ConsoleInput {
     public void attach(@NonNull INativeDisplayRootService service) {
         var old = direct;
         direct = new DirectInputSink(vmId, screenId, service, this::sendToDaemon);
-        if (old != null) old.close();
+        if (pointerCapture != null)
+            pointerCapture.setSink(direct, old == null ? null : old::close);
+        else if (old != null) old.close();
     }
 
     /** Writes go back to the vm_input request. */
     public void detach() {
         var old = direct;
         direct = null;
-        if (old != null) old.close();
+        if (pointerCapture != null)
+            pointerCapture.setSink(null, old == null ? null : old::close);
+        else if (old != null) old.close();
     }
 
     /** The console is going: the forwarder stops and the socket path is dropped. */
@@ -151,7 +164,12 @@ public final class ConsoleInput {
             forwarder.close();
             forwarder = null;
         }
-        detach();
+        if (pointerCapture != null) {
+            var old = direct;
+            direct = null;
+            pointerCapture.close(old == null ? null : old::close);
+            pointerCapture = null;
+        } else detach();
     }
 
     /** A mouse button from the console's own buttons: EvdevEncoder.BTN_LEFT or BTN_RIGHT. */

@@ -1844,4 +1844,6 @@
     <string name="hugepage_operation_force_clear_message">此操作只清除本地的「未決」標記，不會重試、復原或確認原操作；模組保持目前狀態。僅在原請求已無法查詢時使用。目前模組狀態：</string>
     <string name="hugepage_operation_force_cleared">未決標記已清除。修改大頁設定前請先核對模組狀態。</string>
     <string name="hugepage_operation_reconciled">上一筆請求已依實際狀態判定：%1$s</string>
+    <string name="native_pointer_grab">擷取滑鼠 / 觸控板</string>
+    <string name="native_pointer_natural_scroll">觸控板自然捲動</string>
 </resources>

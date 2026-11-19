@@ -4,6 +4,7 @@
 package cn.classfun.droidvm.ui.vm.display.base;
 
 import android.app.Activity;
+import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.widget.LinearLayout;
@@ -27,6 +28,8 @@ public final class ConsoleMenu {
     /** What the menu asks of its console. */
     public interface Host {
         void selectInputMode(@NonNull InputMode mode);
+
+        default void prepareMenu(@NonNull Menu menu) { }
 
         @NonNull
         KeyboardMode keyboardMode();
@@ -68,6 +71,7 @@ public final class ConsoleMenu {
     public void show(@NonNull View... rows) {
         var popup = new MaterialMenu(activity, anchor);
         popup.inflate(menuRes);
+        host.prepareMenu(popup.getMenu());
         var inflater = activity.getLayoutInflater();
         var header = new LinearLayout(activity);
         header.setOrientation(LinearLayout.VERTICAL);
