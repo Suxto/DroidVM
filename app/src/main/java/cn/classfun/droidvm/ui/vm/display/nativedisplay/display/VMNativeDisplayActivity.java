@@ -24,6 +24,7 @@ import android.view.KeyCharacterMap;
 import android.view.Display;
 import android.view.InputDevice;
 import android.view.KeyEvent;
+import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.SurfaceView;
 import android.view.View;
