@@ -13,7 +13,7 @@ import java.util.concurrent.*;
 
 public class CaptureRegressionProbe {
  static Field field(String name)throws Exception {Field f=StandardPointerCapture.class.getDeclaredField(name);f.setAccessible(true);return f;}
- static void lifecycle()throws Exception {
+ static void lifecycle(boolean replace)throws Exception {
   if(Looper.myLooper()==null)Looper.prepareMainLooper();
   Class<?> at=Class.forName("android.app.ActivityThread");Object thread=at.getMethod("systemMain").invoke(null);
   Context context=(Context)at.getMethod("getSystemContext").invoke(thread);
@@ -33,7 +33,11 @@ public class CaptureRegressionProbe {
   CountDownLatch entered=new CountDownLatch(1),resume=new CountDownLatch(1);
   worker.submit(()->{entered.countDown();try{resume.await();}catch(InterruptedException e){throw new RuntimeException(e);}});
   if(!entered.await(3,TimeUnit.SECONDS))throw new AssertionError("worker not paused");
-  capture.close(sink::close);resume.countDown();
+  if (replace) {
+   capture.setSink((channel, data) -> true, sink::close);
+   capture.close();
+  } else capture.close(sink::close);
+  resume.countDown();
   if(!worker.awaitTermination(3,TimeUnit.SECONDS))throw new AssertionError("worker not drained");
   System.out.println(fmt("Lifecycle actual guest button events=%s expected=[1, 0]", guest));
   if(!guest.equals(List.of(1,0)))throw new AssertionError("release was dropped");
@@ -61,5 +65,5 @@ public class CaptureRegressionProbe {
   pad.setButtons(0);if(held[0])throw new AssertionError("final secondary release missing");
   if(!raw.equals(List.of("273:true","273:false")))throw new AssertionError(fmt("duplicate transitions %s", raw));
  }
- public static void main(String[]args)throws Exception {lifecycle();wheel();chord();System.out.println("ALL 3 merge-review regression checks passed");}
+ public static void main(String[]args)throws Exception {lifecycle(false);lifecycle(true);wheel();chord();System.out.println("ALL 4 merge-review regression checks passed");}
 }
