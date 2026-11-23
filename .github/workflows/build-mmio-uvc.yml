@@ -35,6 +35,9 @@ jobs:
           EOF
           repo sync -c -j8 --no-tags --fail-fast
       - name: Build Android ARM64 runtime
+        env:
+          # The minimal manifest omits modules outside the runtime's dependency tree.
+          ALLOW_MISSING_DEPENDENCIES: 'true'
         run: |
           cd "$RUNNER_TEMP/aosp"
           git -C external/crosvm apply --check "$GITHUB_WORKSPACE/scripts/crosvm/mmio-uvc.patch"
