@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       mmio_uvc_run:
-        description: Successful MMIO UVC runtime workflow run ID from this branch
+        description: MMIO UVC runtime workflow run ID from this branch
         type: string
 
 permissions:
@@ -59,7 +59,8 @@ jobs:
           [[ "$RUNTIME_RUN" =~ ^[0-9]+$ ]]
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUNTIME_RUN" | jq -e \
             --arg branch "$GITHUB_REF_NAME" --arg repo "$GITHUB_REPOSITORY" \
-            '.path == ".github/workflows/build-mmio-uvc.yml" and .conclusion == "success" and .head_branch == $branch and .head_repository.full_name == $repo'
+            '.path == ".github/workflows/build-mmio-uvc.yml" and .head_branch == $branch and .head_repository.full_name == $repo'
+          gh run watch "$RUNTIME_RUN" --interval 30 --exit-status
           gh run download "$RUNTIME_RUN" -n crosvm-mmio-uvc-arm64 -D "$RUNNER_TEMP/mmio-uvc"
           (cd "$RUNNER_TEMP/mmio-uvc" && sha256sum -c SHA256SUMS)
           python3 scripts/crosvm/replace-prebuilt-runtime.py \
