@@ -1,0 +1,3846 @@
+diff --git a/devices/src/usb/backend/device.rs b/devices/src/usb/backend/device.rs
+index 3b53042..9d5963c 100644
+--- a/devices/src/usb/backend/device.rs
++++ b/devices/src/usb/backend/device.rs
+@@ -33,6 +33,8 @@ use crate::usb::backend::error::Result;
+ use crate::usb::backend::fido_backend::fido_passthrough::FidoPassthroughDevice;
+ use crate::usb::backend::fido_backend::transfer::FidoTransfer;
+ use crate::usb::backend::host_backend::host_device::HostDevice;
++use crate::usb::backend::uvc_backend::transfer::UvcTransfer;
++use crate::usb::backend::uvc_backend::uvc_device::UvcDevice;
+ use crate::usb::backend::transfer::BackendTransfer;
+ use crate::usb::backend::transfer::BackendTransferHandle;
+ use crate::usb::backend::transfer::BackendTransferType;
+@@ -58,11 +60,12 @@ pub enum BackendDeviceType {
+     HostDevice(HostDevice),
+     // Virtual security key implementation
+     FidoDevice(FidoPassthroughDevice),
++    UvcDevice(UvcDevice),
+ }
+ 
+ impl AsRawDescriptor for BackendDeviceType {
+     fn as_raw_descriptor(&self) -> RawDescriptor {
+-        multi_dispatch!(self, BackendDeviceType, HostDevice FidoDevice, as_raw_descriptor)
++        multi_dispatch!(self, BackendDeviceType, HostDevice FidoDevice UvcDevice, as_raw_descriptor)
+     }
+ }
+ 
+@@ -74,7 +77,7 @@ impl BackendDevice for BackendDeviceType {
+         multi_dispatch!(
+             self,
+             BackendDeviceType,
+-            HostDevice FidoDevice,
++            HostDevice FidoDevice UvcDevice,
+             submit_backend_transfer,
+             transfer
+         )
+@@ -84,7 +87,7 @@ impl BackendDevice for BackendDeviceType {
+         multi_dispatch!(
+             self,
+             BackendDeviceType,
+-            HostDevice FidoDevice,
++            HostDevice FidoDevice UvcDevice,
+             detach_event_handler,
+             event_loop
+         )
+@@ -94,7 +97,7 @@ impl BackendDevice for BackendDeviceType {
+         multi_dispatch!(
+             self,
+             BackendDeviceType,
+-            HostDevice FidoDevice,
++            HostDevice FidoDevice UvcDevice,
+             request_transfer_buffer,
+             size
+         )
+@@ -109,7 +112,7 @@ impl BackendDevice for BackendDeviceType {
+         multi_dispatch!(
+             self,
+             BackendDeviceType,
+-            HostDevice FidoDevice,
++            HostDevice FidoDevice UvcDevice,
+             build_bulk_transfer,
+             ep_addr,
+             transfer_buffer,
+@@ -125,7 +128,7 @@ impl BackendDevice for BackendDeviceType {
+         multi_dispatch!(
+             self,
+             BackendDeviceType,
+-            HostDevice FidoDevice,
++            HostDevice FidoDevice UvcDevice,
+             build_interrupt_transfer,
+             ep_addr,
+             transfer_buffer
+@@ -141,7 +144,7 @@ impl BackendDevice for BackendDeviceType {
+         multi_dispatch!(
+             self,
+             BackendDeviceType,
+-            HostDevice FidoDevice,
++            HostDevice FidoDevice UvcDevice,
+             build_isochronous_transfer,
+             ep_addr,
+             transfer_buffer,
+@@ -153,20 +156,20 @@ impl BackendDevice for BackendDeviceType {
+         multi_dispatch!(
+             self,
+             BackendDeviceType,
+-            HostDevice FidoDevice,
++            HostDevice FidoDevice UvcDevice,
+             get_control_transfer_state
+         )
+     }
+ 
+     fn get_device_state(&mut self) -> Arc<RwLock<DeviceState>> {
+-        multi_dispatch!(self, BackendDeviceType, HostDevice FidoDevice, get_device_state)
++        multi_dispatch!(self, BackendDeviceType, HostDevice FidoDevice UvcDevice, get_device_state)
+     }
+ 
+     fn get_active_config_descriptor(&mut self) -> Result<ConfigDescriptorTree> {
+         multi_dispatch!(
+             self,
+             BackendDeviceType,
+-            HostDevice FidoDevice,
++            HostDevice FidoDevice UvcDevice,
+             get_active_config_descriptor
+         )
+     }
+@@ -175,7 +178,7 @@ impl BackendDevice for BackendDeviceType {
+         multi_dispatch!(
+             self,
+             BackendDeviceType,
+-            HostDevice FidoDevice,
++            HostDevice FidoDevice UvcDevice,
+             get_config_descriptor,
+             config
+         )
+@@ -185,7 +188,7 @@ impl BackendDevice for BackendDeviceType {
+         multi_dispatch!(
+             self,
+             BackendDeviceType,
+-            HostDevice FidoDevice,
++            HostDevice FidoDevice UvcDevice,
+             get_config_descriptor_by_index,
+             config_index
+         )
+@@ -195,7 +198,7 @@ impl BackendDevice for BackendDeviceType {
+         multi_dispatch!(
+             self,
+             BackendDeviceType,
+-            HostDevice FidoDevice,
++            HostDevice FidoDevice UvcDevice,
+             get_device_descriptor_tree
+         )
+     }
+@@ -204,7 +207,7 @@ impl BackendDevice for BackendDeviceType {
+         multi_dispatch!(
+             self,
+             BackendDeviceType,
+-            HostDevice FidoDevice,
++            HostDevice FidoDevice UvcDevice,
+             get_active_configuration
+         )
+     }
+@@ -213,7 +216,7 @@ impl BackendDevice for BackendDeviceType {
+         multi_dispatch!(
+             self,
+             BackendDeviceType,
+-            HostDevice FidoDevice,
++            HostDevice FidoDevice UvcDevice,
+             set_active_configuration,
+             config
+         )
+@@ -223,7 +226,7 @@ impl BackendDevice for BackendDeviceType {
+         multi_dispatch!(
+             self,
+             BackendDeviceType,
+-            HostDevice FidoDevice,
++            HostDevice FidoDevice UvcDevice,
+             clear_feature,
+             value,
+             index
+@@ -234,7 +237,7 @@ impl BackendDevice for BackendDeviceType {
+         multi_dispatch!(
+             self,
+             BackendDeviceType,
+-            HostDevice FidoDevice,
++            HostDevice FidoDevice UvcDevice,
+             create_endpoints,
+             config_descriptor
+         )
+@@ -243,34 +246,34 @@ impl BackendDevice for BackendDeviceType {
+ 
+ impl XhciBackendDevice for BackendDeviceType {
+     fn get_backend_type(&self) -> BackendType {
+-        multi_dispatch!(self, BackendDeviceType, HostDevice FidoDevice, get_backend_type)
++        multi_dispatch!(self, BackendDeviceType, HostDevice FidoDevice UvcDevice, get_backend_type)
+     }
+ 
+     fn get_vid(&self) -> u16 {
+-        multi_dispatch!(self, BackendDeviceType, HostDevice FidoDevice, get_vid)
++        multi_dispatch!(self, BackendDeviceType, HostDevice FidoDevice UvcDevice, get_vid)
+     }
+ 
+     fn get_pid(&self) -> u16 {
+-        multi_dispatch!(self, BackendDeviceType, HostDevice FidoDevice, get_pid)
++        multi_dispatch!(self, BackendDeviceType, HostDevice FidoDevice UvcDevice, get_pid)
+     }
+ 
+     fn set_address(&mut self, address: UsbDeviceAddress) {
+-        multi_dispatch!(self, BackendDeviceType, HostDevice FidoDevice, set_address, address)
++        multi_dispatch!(self, BackendDeviceType, HostDevice FidoDevice UvcDevice, set_address, address)
+     }
+ 
+     fn reset(&mut self) -> Result<()> {
+-        multi_dispatch!(self, BackendDeviceType, HostDevice FidoDevice, reset)
++        multi_dispatch!(self, BackendDeviceType, HostDevice FidoDevice UvcDevice, reset)
+     }
+ 
+     fn get_speed(&self) -> Option<DeviceSpeed> {
+-        multi_dispatch!(self, BackendDeviceType, HostDevice FidoDevice, get_speed)
++        multi_dispatch!(self, BackendDeviceType, HostDevice FidoDevice UvcDevice, get_speed)
+     }
+ 
+     fn alloc_streams(&self, ep: u8, num_streams: u16) -> Result<()> {
+         multi_dispatch!(
+             self,
+             BackendDeviceType,
+-            HostDevice FidoDevice,
++            HostDevice FidoDevice UvcDevice,
+             alloc_streams,
+             ep,
+             num_streams
+@@ -278,11 +281,11 @@ impl XhciBackendDevice for BackendDeviceType {
+     }
+ 
+     fn free_streams(&self, ep: u8) -> Result<()> {
+-        multi_dispatch!(self, BackendDeviceType, HostDevice FidoDevice, free_streams, ep)
++        multi_dispatch!(self, BackendDeviceType, HostDevice FidoDevice UvcDevice, free_streams, ep)
+     }
+ 
+     fn stop(&mut self) {
+-        multi_dispatch!(self, BackendDeviceType, HostDevice FidoDevice, stop)
++        multi_dispatch!(self, BackendDeviceType, HostDevice FidoDevice UvcDevice, stop)
+     }
+ }
+ 
+@@ -369,6 +372,13 @@ impl BackendDeviceType {
+                             (TransferStatus::Stalled, 0)
+                         }
+                     },
++                    BackendDeviceType::UvcDevice(device) => {
++                        let status = device.set_interface(
++                            control_request_setup.index as u8,
++                            control_request_setup.value as u8,
++                        )?;
++                        (status, 0)
++                    }
+                     _ => {
+                         // Nothing to do for non-host devices
+                         (TransferStatus::Completed, 0)
+@@ -416,6 +426,7 @@ impl BackendDeviceType {
+                                 }
+                             }
+                         }
++                        BackendDeviceType::UvcDevice(_) => return Ok(false),
+                         BackendDeviceType::FidoDevice(fido_passthrough) => {
+                             match fido_passthrough
+                                 .get_config_descriptor_by_index(control_request_setup.value as u8)
+@@ -490,6 +501,7 @@ impl BackendDeviceType {
+ 
+         // TODO(morg): Refactor this code so it doesn't need to match on each implementation type
+         let mut control_transfer = match self {
++            BackendDeviceType::UvcDevice(_) => BackendTransferType::UvcDevice(UvcTransfer::new(0, TransferBuffer::Vector(control_buffer))),
+             BackendDeviceType::HostDevice(_) => BackendTransferType::HostDevice(
+                 Transfer::new_control(TransferBuffer::Vector(control_buffer))
+                     .map_err(Error::CreateTransfer)?,
+diff --git a/devices/src/usb/backend/device_provider.rs b/devices/src/usb/backend/device_provider.rs
+index ce1b6e7..27d4945 100644
+--- a/devices/src/usb/backend/device_provider.rs
++++ b/devices/src/usb/backend/device_provider.rs
+@@ -6,6 +6,7 @@ use std::collections::HashMap;
+ use std::fs::File;
+ use std::mem;
+ use std::sync::Arc;
++use std::sync::OnceLock;
+ use std::time::Duration;
+ 
+ use anyhow::Context;
+@@ -26,6 +27,7 @@ use crate::usb::backend::error::Error;
+ use crate::usb::backend::error::Result;
+ use crate::usb::backend::fido_backend::fido_provider::attach_security_key;
+ use crate::usb::backend::host_backend::host_backend_device_provider::attach_host_backend_device;
++use crate::usb::backend::uvc_backend::{camera, uvc_device};
+ use crate::usb::xhci::usb_hub::UsbHub;
+ use crate::usb::xhci::xhci_backend_device::XhciBackendDevice;
+ use crate::usb::xhci::xhci_backend_device_provider::XhciBackendDeviceProvider;
+@@ -35,6 +37,7 @@ use crate::utils::EventLoop;
+ use crate::utils::FailHandle;
+ 
+ const SOCKET_TIMEOUT_MS: u64 = 2000;
++static UVC_CAMERAS: OnceLock<Vec<String>> = OnceLock::new();
+ 
+ /// Device provider is an xhci backend device provider that provides generic semantics to handle
+ /// various types of backend devices and connects them to the xhci layer.
+@@ -48,6 +51,11 @@ pub enum DeviceProvider {
+ }
+ 
+ impl DeviceProvider {
++    /// Records the Android cameras explicitly selected for this VM.
++    pub fn set_uvc_cameras(cameras: Vec<String>) {
++        let _ = UVC_CAMERAS.set(cameras);
++    }
++
+     pub fn new() -> Result<(Tube, DeviceProvider)> {
+         let (child_tube, control_tube) = Tube::pair().map_err(Error::CreateControlTube)?;
+         control_tube
+@@ -88,6 +96,23 @@ impl DeviceProvider {
+                         Arc::downgrade(&handler),
+                     )
+                     .map_err(Error::AddToEventLoop)?;
++                if let Some(cameras) = UVC_CAMERAS.get() {
++                    for (slot, camera_id) in cameras.iter().take(camera::CAMERA_SLOTS).enumerate() {
++                        match uvc_device::attach_virtual_camera(
++                            DeviceState::new(inner.fail_handle.clone(), inner.job_queue.clone()),
++                            inner.event_loop.clone(),
++                            slot,
++                            camera_id.clone(),
++                        ) {
++                            Ok(camera) => {
++                                if let Err(e) = inner.usb_hub.connect_backend(camera) {
++                                    error!("failed to connect virtual UVC camera: {e}");
++                                }
++                            }
++                            Err(e) => error!("failed to initialize virtual UVC camera: {e}"),
++                        }
++                    }
++                }
+                 *self = DeviceProvider::Started { inner };
+                 Ok(())
+             }
+diff --git a/devices/src/usb/backend/mod.rs b/devices/src/usb/backend/mod.rs
+index 5690d89..e7314c7 100644
+--- a/devices/src/usb/backend/mod.rs
++++ b/devices/src/usb/backend/mod.rs
+@@ -10,3 +10,4 @@ pub mod fido_backend;
+ pub mod host_backend;
+ pub mod transfer;
+ pub mod utils;
++pub mod uvc_backend;
+diff --git a/devices/src/usb/backend/transfer.rs b/devices/src/usb/backend/transfer.rs
+index f3ca153..a013973 100644
+--- a/devices/src/usb/backend/transfer.rs
++++ b/devices/src/usb/backend/transfer.rs
+@@ -10,6 +10,7 @@ use usb_util::UsbRequestSetup;
+ use crate::usb::backend::endpoint::ControlEndpointState;
+ use crate::usb::backend::error::Result;
+ use crate::usb::backend::fido_backend::transfer::FidoTransfer;
++use crate::usb::backend::uvc_backend::transfer::UvcTransfer;
+ 
+ /// BackendTransferHandle is a wrapper structure around a generic transfer handle whose
+ /// implementation depends on the backend type that is being used.
+@@ -32,6 +33,7 @@ impl BackendTransferHandle {
+ pub enum BackendTransferType {
+     HostDevice(Transfer),
+     FidoDevice(FidoTransfer),
++    UvcDevice(UvcTransfer),
+ }
+ 
+ /// The backend transfer trait implemention is the interface of a generic transfer structure that
+@@ -60,6 +62,7 @@ impl BackendTransfer for BackendTransferType {
+         match self {
+             BackendTransferType::HostDevice(transfer) => BackendTransfer::status(transfer),
+             BackendTransferType::FidoDevice(transfer) => BackendTransfer::status(transfer),
++            BackendTransferType::UvcDevice(transfer) => BackendTransfer::status(transfer),
+         }
+     }
+ 
+@@ -67,6 +70,7 @@ impl BackendTransfer for BackendTransferType {
+         match self {
+             BackendTransferType::HostDevice(transfer) => BackendTransfer::actual_length(transfer),
+             BackendTransferType::FidoDevice(transfer) => BackendTransfer::actual_length(transfer),
++            BackendTransferType::UvcDevice(transfer) => BackendTransfer::actual_length(transfer),
+         }
+     }
+ 
+@@ -74,6 +78,7 @@ impl BackendTransfer for BackendTransferType {
+         match self {
+             BackendTransferType::HostDevice(transfer) => BackendTransfer::buffer(transfer),
+             BackendTransferType::FidoDevice(transfer) => BackendTransfer::buffer(transfer),
++            BackendTransferType::UvcDevice(transfer) => BackendTransfer::buffer(transfer),
+         }
+     }
+ 
+@@ -81,6 +86,7 @@ impl BackendTransfer for BackendTransferType {
+         match self {
+             BackendTransferType::HostDevice(transfer) => BackendTransfer::iso_packet(transfer, i),
+             BackendTransferType::FidoDevice(transfer) => BackendTransfer::iso_packet(transfer, i),
++            BackendTransferType::UvcDevice(transfer) => BackendTransfer::iso_packet(transfer, i),
+         }
+     }
+ 
+@@ -92,6 +98,9 @@ impl BackendTransfer for BackendTransferType {
+             BackendTransferType::FidoDevice(transfer) => {
+                 BackendTransfer::set_callback(transfer, cb)
+             }
++            BackendTransferType::UvcDevice(transfer) => {
++                BackendTransfer::set_callback(transfer, cb)
++            }
+         }
+     }
+ }
+diff --git a/devices/src/usb/backend/utils.rs b/devices/src/usb/backend/utils.rs
+index 10bcf91..a80d636 100644
+--- a/devices/src/usb/backend/utils.rs
++++ b/devices/src/usb/backend/utils.rs
+@@ -75,6 +75,7 @@ impl EventHandler for UsbUtilEventHandler {
+             BackendDeviceType::FidoDevice(fido_device) => fido_device
+                 .read_hidraw_file()
+                 .context("FidoDeviceEventHandler failed to read hidraw device"),
++            BackendDeviceType::UvcDevice(_) => Ok(()),
+         }
+     }
+ }
+diff --git a/devices/src/usb/backend/uvc_backend/camera.rs b/devices/src/usb/backend/uvc_backend/camera.rs
+new file mode 100644
+index 0000000..322a8e9
+--- /dev/null
++++ b/devices/src/usb/backend/uvc_backend/camera.rs
+@@ -0,0 +1,1040 @@
++// Copyright 2026 The crosvm Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++//! Camera2 access for the virtual UVC camera.
++//!
++//! crosvm runs as root (KernelSU domain `u:r:ksu:s0`), which is allowed to talk
++//! to the Android camera service, so the frames can come straight from the
++//! phone's camera instead of a built in test picture.
++//!
++//! The NDK camera stack (`libcamera2ndk`, `libmediandk`, `libandroid`) is
++//! loaded with `dlopen` instead of being linked, so that the crosvm build does
++//! not need those modules in its `shared_libs` list. Everything here is a
++//! best-effort probe for now: it reports how far it gets and writes the result
++//! to the crosvm log.
++
++#![allow(non_camel_case_types)]
++
++use std::ffi::CString;
++use std::os::raw::c_char;
++use std::os::raw::c_int;
++use std::os::raw::c_void;
++
++use base::info;
++
++const RTLD_NOW: c_int = 2;
++/// `AIMAGE_FORMAT_YUV_420_888`
++const IMAGE_FORMAT_YUV_420_888: c_int = 0x23;
++/// `AIMAGE_FORMAT_JPEG`
++const IMAGE_FORMAT_JPEG: c_int = 0x100;
++/// Template id of `ACAMERA_TEMPLATE_PREVIEW`
++const TEMPLATE_PREVIEW: c_int = 1;
++/// `ACAMERA_CONTROL_AE_MODE` tag
++const ACAMERA_CONTROL_AE_MODE: u32 = 0x0100_0003;
++/// `ACAMERA_CONTROL_AE_TARGET_FPS_RANGE` tag
++const ACAMERA_CONTROL_AE_TARGET_FPS_RANGE: u32 = 0x0100_0004;
++/// `ACAMERA_JPEG_THUMBNAIL_SIZE` tag
++const ACAMERA_JPEG_THUMBNAIL_SIZE: u32 = 0x0500_0000;
++/// `ACAMERA_JPEG_QUALITY` tag
++const ACAMERA_JPEG_QUALITY: u32 = 0x0500_0002;
++/// JPEG quality requested from the camera HAL: high quality frames cost the
++/// guest a lot of CPU to decode and slow the bulk stream down.
++const HW_JPEG_QUALITY: i32 = 65;
++
++extern "C" {
++    fn dlopen(filename: *const c_char, flag: c_int) -> *mut c_void;
++    fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
++}
++
++/// A `dlopen`ed shared library.
++struct Lib {
++    handle: *mut c_void,
++}
++
++impl Lib {
++    fn open(name: &str) -> Option<Lib> {
++        let cname = CString::new(name).ok()?;
++        // SAFETY: `cname` is a valid NUL terminated string.
++        let handle = unsafe { dlopen(cname.as_ptr(), RTLD_NOW) };
++        if handle.is_null() {
++            None
++        } else {
++            Some(Lib { handle })
++        }
++    }
++
++    fn sym(&self, name: &str) -> Option<*mut c_void> {
++        let cname = CString::new(name).ok()?;
++        // SAFETY: `self.handle` comes from a successful `dlopen`.
++        let ptr = unsafe { dlsym(self.handle, cname.as_ptr()) };
++        if ptr.is_null() {
++            None
++        } else {
++            Some(ptr)
++        }
++    }
++}
++
++macro_rules! bind {
++    ($lib:expr, $out:ident, $name:literal, $ty:ty) => {
++        let $out: $ty = {
++            let ptr = $lib
++                .sym($name)
++                .ok_or_else(|| format!("missing symbol {}", $name))?;
++            // SAFETY: the symbol exists and its declared signature matches the
++            // NDK C API.
++            unsafe { std::mem::transmute::<*mut c_void, $ty>(ptr) }
++        };
++    };
++}
++
++// Opaque handles.
++type ACameraManager = c_void;
++type ACameraDevice = c_void;
++type ACaptureSessionOutputContainer = c_void;
++type ACaptureSessionOutput = c_void;
++type ACameraOutputTarget = c_void;
++type ACaptureRequest = c_void;
++type ACameraCaptureSession = c_void;
++type AImageReader = c_void;
++type ANativeWindow = c_void;
++
++#[repr(C)]
++struct ACameraIdList {
++    num_cameras: c_int,
++    camera_ids: *mut *const c_char,
++}
++
++// The callback structs below are passed by reference only, so they are given a
++// little extra room: the NDK structs only grow by appending fields.
++#[repr(C)]
++struct DeviceStateCallbacks {
++    context: *mut c_void,
++    on_disconnected: Option<extern "C" fn(*mut c_void, *mut ACameraDevice)>,
++    on_error: Option<extern "C" fn(*mut c_void, *mut ACameraDevice, c_int)>,
++}
++
++#[repr(C)]
++struct SessionStateCallbacks {
++    context: *mut c_void,
++    on_ready: Option<extern "C" fn(*mut c_void, *mut ACameraCaptureSession)>,
++    on_active: Option<extern "C" fn(*mut c_void, *mut ACameraCaptureSession)>,
++    on_closed: Option<extern "C" fn(*mut c_void, *mut ACameraCaptureSession)>,
++}
++
++#[repr(C)]
++struct SessionCaptureCallbacks {
++    context: *mut c_void,
++    on_started: Option<extern "C" fn(*mut c_void, *mut ACameraCaptureSession, *mut ACaptureRequest, u64)>,
++    on_progress: Option<extern "C" fn(*mut c_void, *mut ACameraCaptureSession, *mut ACaptureRequest, i32)>,
++    on_sequence_completed: Option<extern "C" fn(*mut c_void, *mut ACameraCaptureSession, *mut ACaptureRequest)>,
++    on_buffer_lost: Option<extern "C" fn(*mut c_void, *mut ACameraCaptureSession, *mut ACaptureRequest, *mut c_void, i32)>,
++}
++
++#[repr(C)]
++struct ImageReaderListener {
++    context: *mut c_void,
++    on_image_available: Option<extern "C" fn(*mut c_void, *mut AImageReader)>,
++}
++
++#[repr(C)]
++struct AImage {
++    _private: [u8; 0],
++}
++
++#[allow(dead_code)]
++extern "C" fn on_camera_disconnected(_context: *mut c_void, _device: *mut ACameraDevice) {
++    info!("uvc: camera disconnected");
++}
++
++#[allow(dead_code)]
++extern "C" fn on_camera_error(_context: *mut c_void, _device: *mut ACameraDevice, error: c_int) {
++    info!("uvc: camera error {error}");
++}
++
++#[allow(dead_code)]
++extern "C" fn on_session_ready(_context: *mut c_void, _session: *mut ACameraCaptureSession) {
++    info!("uvc: capture session ready");
++}
++
++#[allow(dead_code)]
++extern "C" fn on_image_available(_context: *mut c_void, _reader: *mut AImageReader) {
++    info!("uvc: image available");
++}
++
++/// Everything the probe needs, resolved from the NDK camera stack.
++struct CameraApi {
++    _camera_lib: Lib,
++    _media_lib: Lib,
++    _android_lib: Lib,
++
++    manager_create: unsafe extern "C" fn() -> *mut ACameraManager,
++    manager_delete: unsafe extern "C" fn(*mut ACameraManager),
++    get_camera_id_list:
++        unsafe extern "C" fn(*mut ACameraManager, *mut *mut ACameraIdList) -> c_int,
++    delete_camera_id_list: unsafe extern "C" fn(*mut ACameraIdList),
++    open_camera: unsafe extern "C" fn(
++        *mut ACameraManager,
++        *const c_char,
++        *const DeviceStateCallbacks,
++        *mut *mut ACameraDevice,
++    ) -> c_int,
++    device_close: unsafe extern "C" fn(*mut ACameraDevice) -> c_int,
++    create_capture_session: unsafe extern "C" fn(
++        *mut ACameraDevice,
++        *const ACaptureSessionOutputContainer,
++        *const SessionStateCallbacks,
++        *mut *mut ACameraCaptureSession,
++    ) -> c_int,
++    session_output_container_create:
++        unsafe extern "C" fn(*mut *mut ACaptureSessionOutputContainer) -> c_int,
++    session_output_container_add:
++        unsafe extern "C" fn(*mut ACaptureSessionOutputContainer, *const ACaptureSessionOutput) -> c_int,
++    session_output_create: unsafe extern "C" fn(
++        *mut ANativeWindow,
++        *mut *mut ACaptureSessionOutput,
++    ) -> c_int,
++    output_target_create:
++        unsafe extern "C" fn(*mut ANativeWindow, *mut *mut ACameraOutputTarget) -> c_int,
++    device_create_capture_request:
++        unsafe extern "C" fn(*mut ACameraDevice, c_int, *mut *mut ACaptureRequest) -> c_int,
++    capture_request_add_target:
++        unsafe extern "C" fn(*mut ACaptureRequest, *const ACameraOutputTarget) -> c_int,
++    capture_request_set_entry_u8:
++        unsafe extern "C" fn(*mut ACaptureRequest, u32, c_int, *const u8) -> c_int,
++    capture_request_set_entry_i32:
++        unsafe extern "C" fn(*mut ACaptureRequest, u32, c_int, *const i32) -> c_int,
++    set_repeating_request: unsafe extern "C" fn(
++        *mut ACameraCaptureSession,
++        *const SessionCaptureCallbacks,
++        c_int,
++        *mut *mut ACaptureRequest,
++        *mut c_int,
++    ) -> c_int,
++    session_stop_repeating: unsafe extern "C" fn(*mut ACameraCaptureSession) -> c_int,
++    session_close: unsafe extern "C" fn(*mut ACameraCaptureSession),
++    session_output_container_free: unsafe extern "C" fn(*mut ACaptureSessionOutputContainer),
++    session_output_free: unsafe extern "C" fn(*mut ACaptureSessionOutput),
++    output_target_free: unsafe extern "C" fn(*mut ACameraOutputTarget),
++    capture_request_free: unsafe extern "C" fn(*mut ACaptureRequest),
++    image_reader_delete: unsafe extern "C" fn(*mut AImageReader),
++
++    image_reader_new:
++        unsafe extern "C" fn(c_int, c_int, c_int, c_int, *mut *mut AImageReader) -> c_int,
++    image_reader_get_window:
++        unsafe extern "C" fn(*mut AImageReader, *mut *mut ANativeWindow) -> c_int,
++    image_reader_set_listener:
++        unsafe extern "C" fn(*mut AImageReader, *const ImageReaderListener) -> c_int,
++    image_reader_acquire_latest: unsafe extern "C" fn(*mut AImageReader, *mut *mut AImage) -> c_int,
++    image_get_number_of_planes: unsafe extern "C" fn(*mut AImage, *mut c_int) -> c_int,
++    image_get_plane_data:
++        unsafe extern "C" fn(*mut AImage, c_int, *mut *mut u8, *mut c_int) -> c_int,
++    image_get_plane_row_stride: unsafe extern "C" fn(*mut AImage, c_int, *mut c_int) -> c_int,
++    image_get_plane_pixel_stride: unsafe extern "C" fn(*mut AImage, c_int, *mut c_int) -> c_int,
++    image_get_width: unsafe extern "C" fn(*mut AImage, *mut c_int) -> c_int,
++    image_get_height: unsafe extern "C" fn(*mut AImage, *mut c_int) -> c_int,
++    image_delete: unsafe extern "C" fn(*mut AImage),
++}
++
++impl CameraApi {
++    fn load() -> Result<CameraApi, String> {
++        let camera_lib =
++            Lib::open("libcamera2ndk.so").ok_or_else(|| "dlopen libcamera2ndk.so failed".to_string())?;
++        let media_lib =
++            Lib::open("libmediandk.so").ok_or_else(|| "dlopen libmediandk.so failed".to_string())?;
++        let android_lib =
++            Lib::open("libandroid.so").ok_or_else(|| "dlopen libandroid.so failed".to_string())?;
++
++        bind!(camera_lib, manager_create, "ACameraManager_create", unsafe extern "C" fn() -> *mut ACameraManager);
++        bind!(camera_lib, manager_delete, "ACameraManager_delete", unsafe extern "C" fn(*mut ACameraManager));
++        bind!(camera_lib, get_camera_id_list, "ACameraManager_getCameraIdList", unsafe extern "C" fn(*mut ACameraManager, *mut *mut ACameraIdList) -> c_int);
++        bind!(camera_lib, delete_camera_id_list, "ACameraManager_deleteCameraIdList", unsafe extern "C" fn(*mut ACameraIdList));
++        bind!(camera_lib, open_camera, "ACameraManager_openCamera", unsafe extern "C" fn(*mut ACameraManager, *const c_char, *const DeviceStateCallbacks, *mut *mut ACameraDevice) -> c_int);
++        bind!(camera_lib, device_close, "ACameraDevice_close", unsafe extern "C" fn(*mut ACameraDevice) -> c_int);
++        bind!(camera_lib, create_capture_session, "ACameraDevice_createCaptureSession", unsafe extern "C" fn(*mut ACameraDevice, *const ACaptureSessionOutputContainer, *const SessionStateCallbacks, *mut *mut ACameraCaptureSession) -> c_int);
++        bind!(camera_lib, session_output_container_create, "ACaptureSessionOutputContainer_create", unsafe extern "C" fn(*mut *mut ACaptureSessionOutputContainer) -> c_int);
++        bind!(camera_lib, session_output_container_add, "ACaptureSessionOutputContainer_add", unsafe extern "C" fn(*mut ACaptureSessionOutputContainer, *const ACaptureSessionOutput) -> c_int);
++        bind!(camera_lib, session_output_create, "ACaptureSessionOutput_create", unsafe extern "C" fn(*mut ANativeWindow, *mut *mut ACaptureSessionOutput) -> c_int);
++        bind!(camera_lib, output_target_create, "ACameraOutputTarget_create", unsafe extern "C" fn(*mut ANativeWindow, *mut *mut ACameraOutputTarget) -> c_int);
++        bind!(camera_lib, device_create_capture_request, "ACameraDevice_createCaptureRequest", unsafe extern "C" fn(*mut ACameraDevice, c_int, *mut *mut ACaptureRequest) -> c_int);
++        bind!(camera_lib, capture_request_add_target, "ACaptureRequest_addTarget", unsafe extern "C" fn(*mut ACaptureRequest, *const ACameraOutputTarget) -> c_int);
++        bind!(camera_lib, capture_request_set_entry_u8, "ACaptureRequest_setEntry_u8", unsafe extern "C" fn(*mut ACaptureRequest, u32, c_int, *const u8) -> c_int);
++bind!(camera_lib, capture_request_set_entry_i32, "ACaptureRequest_setEntry_i32", unsafe extern "C" fn(*mut ACaptureRequest, u32, c_int, *const i32) -> c_int);
++        bind!(camera_lib, set_repeating_request, "ACameraCaptureSession_setRepeatingRequest", unsafe extern "C" fn(*mut ACameraCaptureSession, *const SessionCaptureCallbacks, c_int, *mut *mut ACaptureRequest, *mut c_int) -> c_int);
++        bind!(camera_lib, session_stop_repeating, "ACameraCaptureSession_stopRepeating", unsafe extern "C" fn(*mut ACameraCaptureSession) -> c_int);
++        bind!(camera_lib, session_close, "ACameraCaptureSession_close", unsafe extern "C" fn(*mut ACameraCaptureSession));
++        bind!(camera_lib, session_output_container_free, "ACaptureSessionOutputContainer_free", unsafe extern "C" fn(*mut ACaptureSessionOutputContainer));
++        bind!(camera_lib, session_output_free, "ACaptureSessionOutput_free", unsafe extern "C" fn(*mut ACaptureSessionOutput));
++        bind!(camera_lib, output_target_free, "ACameraOutputTarget_free", unsafe extern "C" fn(*mut ACameraOutputTarget));
++        bind!(camera_lib, capture_request_free, "ACaptureRequest_free", unsafe extern "C" fn(*mut ACaptureRequest));
++        bind!(media_lib, image_reader_delete, "AImageReader_delete", unsafe extern "C" fn(*mut AImageReader));
++
++        bind!(media_lib, image_reader_new, "AImageReader_new", unsafe extern "C" fn(c_int, c_int, c_int, c_int, *mut *mut AImageReader) -> c_int);
++        bind!(media_lib, image_reader_get_window, "AImageReader_getWindow", unsafe extern "C" fn(*mut AImageReader, *mut *mut ANativeWindow) -> c_int);
++        bind!(media_lib, image_reader_set_listener, "AImageReader_setImageListener", unsafe extern "C" fn(*mut AImageReader, *const ImageReaderListener) -> c_int);
++        bind!(media_lib, image_reader_acquire_latest, "AImageReader_acquireLatestImage", unsafe extern "C" fn(*mut AImageReader, *mut *mut AImage) -> c_int);
++        bind!(media_lib, image_get_number_of_planes, "AImage_getNumberOfPlanes", unsafe extern "C" fn(*mut AImage, *mut c_int) -> c_int);
++        bind!(media_lib, image_get_plane_data, "AImage_getPlaneData", unsafe extern "C" fn(*mut AImage, c_int, *mut *mut u8, *mut c_int) -> c_int);
++        bind!(media_lib, image_get_plane_row_stride, "AImage_getPlaneRowStride", unsafe extern "C" fn(*mut AImage, c_int, *mut c_int) -> c_int);
++        bind!(media_lib, image_get_plane_pixel_stride, "AImage_getPlanePixelStride", unsafe extern "C" fn(*mut AImage, c_int, *mut c_int) -> c_int);
++        bind!(media_lib, image_get_width, "AImage_getWidth", unsafe extern "C" fn(*mut AImage, *mut c_int) -> c_int);
++        bind!(media_lib, image_get_height, "AImage_getHeight", unsafe extern "C" fn(*mut AImage, *mut c_int) -> c_int);
++        bind!(media_lib, image_delete, "AImage_delete", unsafe extern "C" fn(*mut AImage));
++
++        // Keep the libraries alive for the lifetime of the API object.
++        let _ = &android_lib;
++
++        Ok(CameraApi {
++            _camera_lib: camera_lib,
++            _media_lib: media_lib,
++            _android_lib: android_lib,
++            manager_create,
++            manager_delete,
++            get_camera_id_list,
++            delete_camera_id_list,
++            open_camera,
++            device_close,
++            create_capture_session,
++            session_output_container_create,
++            session_output_container_add,
++            session_output_create,
++            output_target_create,
++            device_create_capture_request,
++            capture_request_add_target,
++            capture_request_set_entry_u8,
++            capture_request_set_entry_i32,
++            set_repeating_request,
++            session_stop_repeating,
++            session_close,
++            session_output_container_free,
++            session_output_free,
++            output_target_free,
++            capture_request_free,
++            image_reader_delete,
++            image_reader_new,
++            image_reader_get_window,
++            image_reader_set_listener,
++            image_reader_acquire_latest,
++            image_get_number_of_planes,
++            image_get_plane_data,
++            image_get_plane_row_stride,
++            image_get_plane_pixel_stride,
++            image_get_width,
++            image_get_height,
++            image_delete,
++        })
++    }
++}
++
++/// JPEG quality used for the MJPEG stream.
++const JPEG_QUALITY: u8 = 75;
++/// Preferred capture resolution, must match the UVC frame descriptor.
++const CAPTURE_WIDTH: c_int = 1920;
++const CAPTURE_HEIGHT: c_int = 1080;
++
++/// How many host cameras one VM can expose as UVC devices.
++pub const CAMERA_SLOTS: usize = 2;
++
++/// Newest JPEG frame produced by each capture loop.
++static LATEST_FRAME: [std::sync::Mutex<Option<Vec<u8>>>; CAMERA_SLOTS] =
++    [const { std::sync::Mutex::new(None) }; CAMERA_SLOTS];
++/// Counter that grows with every captured frame, so that the UVC device can tell
++/// a new picture from the one it already handed to the guest.
++static FRAME_SEQ: [std::sync::atomic::AtomicU64; CAMERA_SLOTS] =
++    [const { std::sync::atomic::AtomicU64::new(0) }; CAMERA_SLOTS];
++
++/// Clamps a slot index coming from outside this module.
++fn camera_slot_of(camera_slot: usize) -> usize {
++    camera_slot.min(CAMERA_SLOTS - 1)
++}
++
++/// Returns a copy of the newest frame of `camera_slot` with its sequence number.
++pub fn take_latest_frame(camera_slot: usize) -> Option<(u64, Vec<u8>)> {
++    let index = camera_slot_of(camera_slot);
++    let mut slot = LATEST_FRAME[index].lock().ok()?;
++    let frame = slot.clone()?;
++    let seq = FRAME_SEQ[index].load(std::sync::atomic::Ordering::Relaxed);
++    Some((seq, frame))
++}
++
++fn store_frame(camera_slot: usize, frame: Vec<u8>) {
++    let index = camera_slot_of(camera_slot);
++    if let Ok(mut slot) = LATEST_FRAME[index].lock() {
++        *slot = Some(frame);
++        FRAME_SEQ[index].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
++    }
++}
++
++fn clear_frame(camera_slot: usize) {
++    let index = camera_slot_of(camera_slot);
++    if let Ok(mut slot) = LATEST_FRAME[index].lock() {
++        *slot = None;
++    }
++}
++
++/// Whether the guest asked for video (UVC commit control) and is still pulling
++/// frames. The camera stays closed unless both are true, so the phone keeps the
++/// camera to itself while Windows is not using it.
++static STREAM_WANTED: [std::sync::atomic::AtomicBool; CAMERA_SLOTS] =
++    [const { std::sync::atomic::AtomicBool::new(false) }; CAMERA_SLOTS];
++/// Last time the guest requested a frame from the bulk endpoint.
++static LAST_ACTIVITY: [std::sync::Mutex<Option<std::time::Instant>>; CAMERA_SLOTS] =
++    [const { std::sync::Mutex::new(None) }; CAMERA_SLOTS];
++
++/// Called by the UVC device when the guest starts or stops streaming.
++pub fn set_streaming(camera_slot: usize, on: bool) {
++    use std::sync::atomic::Ordering;
++    let index = camera_slot_of(camera_slot);
++    STREAM_WANTED[index].store(on, Ordering::Relaxed);
++    if on {
++        touch_activity(camera_slot);
++    } else {
++        append_log(&format!("capture: camera {camera_slot} stopped streaming"));
++    }
++}
++
++/// Called for every bulk IN request so an idle host releases the camera.
++pub fn touch_activity(camera_slot: usize) {
++    let index = camera_slot_of(camera_slot);
++    if let Ok(mut slot) = LAST_ACTIVITY[index].lock() {
++        *slot = Some(std::time::Instant::now());
++    }
++}
++
++fn streaming_wanted(camera_slot: usize) -> bool {
++    use std::sync::atomic::Ordering;
++    let index = camera_slot_of(camera_slot);
++    if !STREAM_WANTED[index].load(Ordering::Relaxed) {
++        return false;
++    }
++    match LAST_ACTIVITY[index].lock().ok().and_then(|slot| *slot) {
++        Some(at) => at.elapsed() < std::time::Duration::from_secs(3),
++        None => false,
++    }
++}
++
++fn append_log(line: &str) {
++    info!("uvc: {line}");
++}
++
++/// Copies one `AImage` plane into a tightly packed buffer.
++///
++/// # Safety
++///
++/// `image` must be a live `AImage` and `api` must have been loaded successfully.
++unsafe fn copy_plane(
++    api: &CameraApi,
++    image: *mut AImage,
++    index: c_int,
++    width: usize,
++    height: usize,
++) -> Option<Vec<u8>> {
++    let mut data: *mut u8 = std::ptr::null_mut();
++    let mut length: c_int = 0;
++    if (api.image_get_plane_data)(image, index, &mut data, &mut length) != 0 || data.is_null() {
++        return None;
++    }
++    let mut row_stride: c_int = 0;
++    let mut pixel_stride: c_int = 0;
++    (api.image_get_plane_row_stride)(image, index, &mut row_stride);
++    (api.image_get_plane_pixel_stride)(image, index, &mut pixel_stride);
++    if row_stride <= 0 || pixel_stride <= 0 || length <= 0 {
++        return None;
++    }
++    let row_stride = row_stride as usize;
++    let pixel_stride = pixel_stride as usize;
++    let source = std::slice::from_raw_parts(data, length as usize);
++    if pixel_stride == 1 && row_stride == width && source.len() >= width * height {
++        return Some(source[..width * height].to_vec());
++    }
++    let mut packed = vec![0u8; width * height];
++    for y in 0..height {
++        for x in 0..width {
++            let offset = y * row_stride + x * pixel_stride;
++            if offset < source.len() {
++                packed[y * width + x] = source[offset];
++            }
++        }
++    }
++    Some(packed)
++}
++
++/// Encodes one camera image as JPEG.
++///
++/// Copies the single JPEG plane of a hardware encoded image.
++///
++/// # Safety
++///
++/// `image` must be a live `AImage` and `api` must have been loaded successfully.
++unsafe fn image_jpeg_bytes(api: &CameraApi, image: *mut AImage) -> Option<Vec<u8>> {
++    let mut data: *mut u8 = std::ptr::null_mut();
++    let mut length: c_int = 0;
++    if (api.image_get_plane_data)(image, 0, &mut data, &mut length) != 0
++        || data.is_null()
++        || length <= 0
++    {
++        return None;
++    }
++    Some(std::slice::from_raw_parts(data, length as usize).to_vec())
++}
++
++/// Drops the metadata segments a camera HAL glues in front of the actual JPEG
++/// data. This device fills roughly 94% of every frame with a huge EXIF blob
++/// (nearly a megabyte at 720p), which is pointless to ship over USB.
++fn slim_jpeg(data: &[u8]) -> Vec<u8> {
++    if data.len() < 4 || data[0] != 0xFF || data[1] != 0xD8 {
++        return data.to_vec();
++    }
++    let mut out = Vec::with_capacity(data.len());
++    out.extend_from_slice(&data[0..2]);
++    let mut index = 2;
++    while index + 3 < data.len() {
++        if data[index] != 0xFF {
++            // Not a segment boundary: keep whatever is left untouched.
++            out.extend_from_slice(&data[index..]);
++            return out;
++        }
++        let marker = data[index + 1];
++        if marker == 0xDA {
++            // Start of scan: the rest is entropy coded image data.
++            out.extend_from_slice(&data[index..]);
++            return out;
++        }
++        let length = ((data[index + 2] as usize) << 8) | data[index + 3] as usize;
++        if length < 2 || index + 2 + length > data.len() {
++            return data.to_vec();
++        }
++        // APP0-APP15 and COM carry metadata only; everything else is needed by
++        // the decoder.
++        if !matches!(marker, 0xE0..=0xEF | 0xFE) {
++            out.extend_from_slice(&data[index..index + 2 + length]);
++        }
++        index += 2 + length;
++    }
++    out
++}
++
++/// # Safety
++///
++/// `image` must be a live `AImage` and `api` must have been loaded successfully.
++unsafe fn image_to_jpeg(api: &CameraApi, image: *mut AImage, log_stats: bool) -> Option<Vec<u8>> {
++    let mut width: c_int = 0;
++    let mut height: c_int = 0;
++    (api.image_get_width)(image, &mut width);
++    (api.image_get_height)(image, &mut height);
++    if width <= 0 || height <= 0 {
++        return None;
++    }
++    let width = width as usize;
++    let height = height as usize;
++    let y = copy_plane(api, image, 0, width, height)?;
++    let u = copy_plane(api, image, 1, width / 2, height / 2)?;
++    let v = copy_plane(api, image, 2, width / 2, height / 2)?;
++    if log_stats {
++        let sum: u64 = y.iter().step_by(101).map(|&value| value as u64).sum();
++        let count = y.iter().step_by(101).count().max(1) as u64;
++        let min = y.iter().copied().min().unwrap_or(0);
++        let max = y.iter().copied().max().unwrap_or(0);
++        let first_u = u.first().copied().unwrap_or(0);
++        append_log(&format!(
++            "capture: y mean={} min={min} max={max} u0={first_u} size={}x{}",
++            sum / count,
++            width,
++            height
++        ));
++    }
++    crate::usb::backend::uvc_backend::jpeg::encode_yuv420(
++        width,
++        height,
++        JPEG_QUALITY,
++        &y,
++        width,
++        &u,
++        width / 2,
++        &v,
++        width / 2,
++    )
++}
++
++/// Streams camera frames through the hardware JPEG encoder.
++///
++/// Falls back to the caller when the session cannot be created, which keeps the
++/// software path available on devices without a usable encoder.
++#[allow(dead_code)]
++fn stream_with_encoder(
++    camera_slot: usize,
++    api: &CameraApi,
++    device: *mut ACameraDevice,
++    mut encoder: crate::usb::backend::uvc_backend::mediacodec::JpegEncoder,
++) {
++    let window = encoder.surface() as *mut ANativeWindow;
++    if window.is_null() {
++        append_log("encoder: surface is null");
++        return;
++    }
++
++    // SAFETY: every NDK call below is made with live handles that this function
++    // owns; failures are reported through status codes.
++    unsafe {
++    let mut container: *mut ACaptureSessionOutputContainer = std::ptr::null_mut();
++    let status = (api.session_output_container_create)(&mut container);
++    if status != 0 || container.is_null() {
++        append_log(&format!("encoder: container create failed status={status}"));
++        return;
++    }
++    let mut session_output: *mut ACaptureSessionOutput = std::ptr::null_mut();
++    let status = (api.session_output_create)(window, &mut session_output);
++    if status != 0 || session_output.is_null() {
++        append_log(&format!("encoder: SessionOutput_create failed status={status}"));
++        return;
++    }
++    (api.session_output_container_add)(container, session_output);
++
++    let session_callbacks = SessionStateCallbacks {
++        context: std::ptr::null_mut(),
++        on_ready: None,
++        on_active: None,
++        on_closed: None,
++    };
++    let mut session: *mut ACameraCaptureSession = std::ptr::null_mut();
++    let status = (api.create_capture_session)(device, container, &session_callbacks, &mut session);
++    if status != 0 || session.is_null() {
++        append_log(&format!("encoder: createCaptureSession failed status={status}"));
++        return;
++    }
++    append_log("encoder: capture session created");
++
++    let mut target: *mut ACameraOutputTarget = std::ptr::null_mut();
++    let status = (api.output_target_create)(window, &mut target);
++    if status != 0 || target.is_null() {
++        append_log(&format!("encoder: OutputTarget_create failed status={status}"));
++        return;
++    }
++
++    let mut request: *mut ACaptureRequest = std::ptr::null_mut();
++    let status = (api.device_create_capture_request)(device, TEMPLATE_PREVIEW, &mut request);
++    if status != 0 || request.is_null() {
++        append_log(&format!("encoder: createCaptureRequest failed status={status}"));
++        return;
++    }
++    (api.capture_request_add_target)(request, target);
++
++    let capture_callbacks = SessionCaptureCallbacks {
++        context: std::ptr::null_mut(),
++        on_started: None,
++        on_progress: None,
++        on_sequence_completed: None,
++        on_buffer_lost: None,
++    };
++    let mut sequence_id: c_int = 0;
++    let status = (api.set_repeating_request)(session, &capture_callbacks, 1, &mut request, &mut sequence_id);
++    if status != 0 {
++        append_log(&format!("encoder: setRepeatingRequest failed status={status}"));
++        return;
++    }
++    append_log("encoder: repeating request started");
++    }
++
++    let mut frames = 0u64;
++    let mut idle_since = std::time::Instant::now();
++    loop {
++        match encoder.poll() {
++            Some(jpeg) => {
++                let length = jpeg.len();
++                if frames == 0 {
++                    append_log(&format!("encoder: first frame jpeg={length} bytes"));
++                }
++                store_frame(camera_slot, jpeg);
++                frames += 1;
++                idle_since = std::time::Instant::now();
++                if frames % 300 == 0 {
++                    append_log(&format!("encoder: frame {frames} jpeg={length} bytes"));
++                }
++            }
++            None => {
++                if frames == 0 && idle_since.elapsed().as_secs() >= 3 {
++                    append_log("encoder: no frames after 3s, is the surface connected?");
++                    idle_since = std::time::Instant::now();
++                }
++                std::thread::sleep(std::time::Duration::from_millis(2));
++            }
++        }
++    }
++}
++/// Opens the first camera on demand and streams frames into [`LATEST_FRAME`].
++///
++/// The camera is only held open while the guest is streaming: as soon as the
++/// guest stops pulling frames, everything is torn down so the phone gets its
++/// camera back.
++fn start_capture(camera_slot: usize, requested: String) {
++    let api = match CameraApi::load() {
++        Ok(api) => api,
++        Err(e) => {
++            append_log(&format!("capture: load failed: {e}"));
++            return;
++        }
++    };
++
++    // SAFETY: all handles below come from the NDK camera API.
++    let manager = unsafe { (api.manager_create)() };
++    if manager.is_null() {
++        append_log("capture: manager null");
++        return;
++    }
++    let camera_id = unsafe {
++        let mut id_list: *mut ACameraIdList = std::ptr::null_mut();
++        if (api.get_camera_id_list)(manager, &mut id_list) != 0 || id_list.is_null() {
++            append_log("capture: no camera id list");
++            return;
++        }
++        let mut ids: Vec<String> = Vec::new();
++        for i in 0..(*id_list).num_cameras.max(0) as usize {
++            let ptr = *(*id_list).camera_ids.add(i);
++            if !ptr.is_null() {
++                ids.push(std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned());
++            }
++        }
++        (api.delete_camera_id_list)(id_list);
++        // Which camera to expose: the UVC device hands over the id the app
++        // asked for ("0", "1", "front", "back" or a literal Android id). An id
++        // this device does not have falls back to the slot position.
++        let want = requested.trim().to_ascii_lowercase();
++        let chosen = match want.as_str() {
++            "" => ids.get(camera_slot).cloned(),
++            "back" | "rear" => ids.first().cloned(),
++            "front" | "selfie" => ids
++                .iter()
++                .find(|id| id.as_str() == "1")
++                .cloned()
++                .or_else(|| ids.get(1).cloned()),
++            other => ids
++                .iter()
++                .find(|id| id.as_str() == other)
++                .cloned()
++                .or_else(|| other.parse::<usize>().ok().and_then(|i| ids.get(i).cloned()))
++                .or_else(|| ids.get(camera_slot).cloned()),
++        };
++        append_log(&format!(
++            "capture: camera {camera_slot} cameras={ids:?} requested={want} chosen={chosen:?}"
++        ));
++        match chosen {
++            Some(id) => id,
++            None => {
++                append_log(&format!("capture: camera {camera_slot} has no camera to open"));
++                return;
++            }
++        }
++    };
++    let camera_id = CString::new(camera_id).unwrap_or_default();
++    append_log("capture: on-demand capture thread ready");
++
++    loop {
++        if !streaming_wanted(camera_slot) {
++            std::thread::sleep(std::time::Duration::from_millis(200));
++            continue;
++        }
++        // SAFETY: the manager outlives every session opened here.
++        unsafe {
++            stream_once(camera_slot, &api, manager, camera_id.as_ptr());
++        }
++        clear_frame(camera_slot);
++        std::thread::sleep(std::time::Duration::from_millis(200));
++    }
++}
++
++/// Runs one open/stream/close cycle, returning once the guest stops streaming or
++/// the camera stops delivering frames.
++///
++/// # Safety
++///
++/// `manager` must be a live `ACameraManager`, and `camera_id` must be a valid
++/// NUL terminated camera id.
++unsafe fn stream_once(
++    camera_slot: usize,
++    api: &CameraApi,
++    manager: *mut ACameraManager,
++    camera_id: *const c_char,
++) {
++    let device_callbacks = DeviceStateCallbacks {
++        context: std::ptr::null_mut(),
++        on_disconnected: None,
++        on_error: None,
++    };
++    let mut device: *mut ACameraDevice = std::ptr::null_mut();
++    let mut status = -1;
++    for _ in 0..10 {
++        status = (api.open_camera)(manager, camera_id, &device_callbacks, &mut device);
++        if status == 0 && !device.is_null() {
++            break;
++        }
++        if !streaming_wanted(camera_slot) {
++            return;
++        }
++        std::thread::sleep(std::time::Duration::from_millis(500));
++    }
++    if status != 0 || device.is_null() {
++        append_log(&format!("capture: openCamera failed status={status}"));
++        return;
++    }
++    append_log("capture: camera opened");
++
++    // This device ships no MediaCodec JPEG encoder and the software encoder is
++    // far too slow, so ask the camera HAL itself for hardware encoded JPEG
++    // frames and only fall back to YUV when that fails.
++    let mut hw_jpeg = true;
++    let mut reader: *mut AImageReader = std::ptr::null_mut();
++    let mut status = -1;
++    for (width, height) in [(CAPTURE_WIDTH, CAPTURE_HEIGHT), (1280, 720), (640, 480)] {
++        status = (api.image_reader_new)(width, height, IMAGE_FORMAT_JPEG, 8, &mut reader);
++        if status == 0 && !reader.is_null() {
++            append_log(&format!("capture: hw jpeg reader {width}x{height}"));
++            break;
++        }
++        append_log(&format!(
++            "capture: hw jpeg reader {width}x{height} failed status={status}"
++        ));
++    }
++    if status != 0 || reader.is_null() {
++        hw_jpeg = false;
++        for (width, height) in [(CAPTURE_WIDTH, CAPTURE_HEIGHT), (1280, 720), (640, 480)] {
++            status = (api.image_reader_new)(width, height, IMAGE_FORMAT_YUV_420_888, 8, &mut reader);
++            if status == 0 && !reader.is_null() {
++                append_log(&format!("capture: yuv reader {width}x{height}"));
++                break;
++            }
++            append_log(&format!(
++                "capture: yuv reader {width}x{height} failed status={status}"
++            ));
++        }
++    }
++    if status != 0 || reader.is_null() {
++        append_log("capture: AImageReader_new failed for every format and size");
++        (api.device_close)(device);
++        return;
++    }
++    let mut window: *mut ANativeWindow = std::ptr::null_mut();
++    let status = (api.image_reader_get_window)(reader, &mut window);
++    if status != 0 || window.is_null() {
++        append_log(&format!("capture: getWindow failed status={status}"));
++        (api.image_reader_delete)(reader);
++        (api.device_close)(device);
++        return;
++    }
++
++    let mut container: *mut ACaptureSessionOutputContainer = std::ptr::null_mut();
++    (api.session_output_container_create)(&mut container);
++    let mut session_output: *mut ACaptureSessionOutput = std::ptr::null_mut();
++    let status = (api.session_output_create)(window, &mut session_output);
++    if status != 0 {
++        append_log(&format!("capture: SessionOutput_create failed status={status}"));
++        (api.image_reader_delete)(reader);
++        (api.device_close)(device);
++        return;
++    }
++    (api.session_output_container_add)(container, session_output);
++
++    let session_callbacks = SessionStateCallbacks {
++        context: std::ptr::null_mut(),
++        on_ready: None,
++        on_active: None,
++        on_closed: None,
++    };
++    let mut session: *mut ACameraCaptureSession = std::ptr::null_mut();
++    let status = (api.create_capture_session)(device, container, &session_callbacks, &mut session);
++    if status != 0 || session.is_null() {
++        append_log(&format!("capture: createCaptureSession failed status={status}"));
++        (api.session_output_container_free)(container);
++        (api.session_output_free)(session_output);
++        (api.image_reader_delete)(reader);
++        (api.device_close)(device);
++        return;
++    }
++
++    let mut target: *mut ACameraOutputTarget = std::ptr::null_mut();
++    let status = (api.output_target_create)(window, &mut target);
++    if status != 0 || target.is_null() {
++        append_log(&format!("capture: OutputTarget_create failed status={status}"));
++        (api.session_close)(session);
++        (api.session_output_container_free)(container);
++        (api.session_output_free)(session_output);
++        (api.image_reader_delete)(reader);
++        (api.device_close)(device);
++        return;
++    }
++    let mut request: *mut ACaptureRequest = std::ptr::null_mut();
++    let status = (api.device_create_capture_request)(device, TEMPLATE_PREVIEW, &mut request);
++    if status != 0 || request.is_null() {
++        append_log(&format!("capture: createCaptureRequest failed status={status}"));
++        (api.output_target_free)(target);
++        (api.session_close)(session);
++        (api.session_output_container_free)(container);
++        (api.session_output_free)(session_output);
++        (api.image_reader_delete)(reader);
++        (api.device_close)(device);
++        return;
++    }
++    (api.capture_request_add_target)(request, target);
++    let auto: u8 = 1;
++    (api.capture_request_set_entry_u8)(request, ACAMERA_CONTROL_AE_MODE, 1, &auto);
++    // Ask for the fastest supported frame rate; the HAL clamps to what the
++    // sensor and the JPEG pipeline can actually do. Without this the preview
++    // template defaults to 15 fps on several vivo devices.
++    let fps_hi: i32 = std::env::var("DROIDVM_UVC_FPS").ok()
++        .and_then(|v| v.trim().parse::<i32>().ok())
++        .filter(|v| *v >= 15 && *v <= 120)
++        .unwrap_or(60);
++    // Vendors accept only the ranges they advertise, so walk a candidate list
++    // until one sticks instead of assuming the highest value works everywhere.
++    let mut fps_applied: Option<[i32; 2]> = None;
++    for candidate in [
++        [fps_hi.min(30), fps_hi],
++        [30, 30],
++        [15, 30],
++        [15, 15],
++    ] {
++        let status = (api.capture_request_set_entry_i32)(
++            request,
++            ACAMERA_CONTROL_AE_TARGET_FPS_RANGE,
++            2,
++            candidate.as_ptr(),
++        );
++        append_log(&format!(
++            "capture: fps range {candidate:?} status={status}"
++        ));
++        if status == 0 {
++            fps_applied = Some(candidate);
++            break;
++        }
++    }
++    let _ = fps_applied;
++    if hw_jpeg {
++        let mut quality_status = -1;
++        for quality in [HW_JPEG_QUALITY, 85, 95] {
++            quality_status =
++                (api.capture_request_set_entry_i32)(request, ACAMERA_JPEG_QUALITY, 1, &quality);
++            append_log(&format!(
++                "capture: jpeg quality={quality} status={quality_status}"
++            ));
++            if quality_status == 0 {
++                break;
++            }
++        }
++        let thumbnail: [i32; 2] = [0, 0];
++        let status2 = (api.capture_request_set_entry_i32)(
++            request,
++            ACAMERA_JPEG_THUMBNAIL_SIZE,
++            2,
++            thumbnail.as_ptr(),
++        );
++        append_log(&format!("capture: thumbnail_off status={status2}"));
++    }
++
++    let capture_callbacks = SessionCaptureCallbacks {
++        context: std::ptr::null_mut(),
++        on_started: None,
++        on_progress: None,
++        on_sequence_completed: None,
++        on_buffer_lost: None,
++    };
++    let mut sequence_id: c_int = 0;
++    let status = (api.set_repeating_request)(
++        session,
++        &capture_callbacks,
++        1,
++        &mut request,
++        &mut sequence_id,
++    );
++    if status != 0 {
++        append_log(&format!("capture: setRepeatingRequest failed status={status}"));
++        (api.capture_request_free)(request);
++        (api.output_target_free)(target);
++        (api.session_close)(session);
++        (api.session_output_container_free)(container);
++        (api.session_output_free)(session_output);
++        (api.image_reader_delete)(reader);
++        (api.device_close)(device);
++        return;
++    }
++    append_log("capture: repeating request started");
++
++    let mut frames = 0u64;
++    let mut last_frame = std::time::Instant::now();
++    // Rolling statistics so a single log line shows whether the stream keeps up.
++    let mut stats_frames = 0u64;
++    let mut stats_bytes = 0u64;
++    let mut stats_at = std::time::Instant::now();
++    loop {
++        if !streaming_wanted(camera_slot) {
++            append_log("capture: releasing camera, guest is not streaming");
++            break;
++        }
++        std::thread::sleep(std::time::Duration::from_millis(1));
++        let mut image: *mut AImage = std::ptr::null_mut();
++        let status = (api.image_reader_acquire_latest)(reader, &mut image);
++        if status != 0 || image.is_null() {
++            if last_frame.elapsed() > std::time::Duration::from_secs(5) {
++                append_log("capture: no frames for 5s, reopening the camera");
++                break;
++            }
++            continue;
++        }
++        let frame = if hw_jpeg {
++            image_jpeg_bytes(api, image).map(|raw| {
++                let slim = slim_jpeg(&raw);
++                if frames == 0 {
++                    append_log(&format!(
++                        "capture: jpeg raw={} slim={} bytes",
++                        raw.len(),
++                        slim.len()
++                    ));
++                }
++                slim
++            })
++        } else {
++            image_to_jpeg(api, image, frames == 0)
++        };
++        if let Some(jpeg) = frame {
++            frames += 1;
++            let size = jpeg.len();
++            last_frame = std::time::Instant::now();
++            store_frame(camera_slot, jpeg);
++            stats_frames += 1;
++            stats_bytes += size as u64;
++            if frames == 1 || frames % 300 == 0 {
++                append_log(&format!("capture: frame {frames} jpeg={size} bytes"));
++            }
++            let elapsed = stats_at.elapsed().as_secs_f64();
++            if elapsed >= 5.0 {
++                append_log(&format!(
++                    "capture: stats fps={:.1} avg_frame={} max_payload={}",
++                    stats_frames as f64 / elapsed,
++                    stats_bytes / stats_frames.max(1),
++                    crate::usb::backend::uvc_backend::descriptors::MAX_PAYLOAD_TRANSFER_SIZE,
++                ));
++                stats_frames = 0;
++                stats_bytes = 0;
++                stats_at = std::time::Instant::now();
++            }
++        }
++        (api.image_delete)(image);
++    }
++
++    (api.session_stop_repeating)(session);
++    (api.session_close)(session);
++    (api.capture_request_free)(request);
++    (api.output_target_free)(target);
++    (api.session_output_container_free)(container);
++    (api.session_output_free)(session_output);
++    (api.image_reader_delete)(reader);
++    (api.device_close)(device);
++    append_log("capture: camera released");
++}
++
++/// Spawns the background thread that streams frames into [`LATEST_FRAME`] while
++/// the guest is streaming. Progress goes to the crosvm log.
++pub fn spawn_camera(camera_slot: usize, camera_id: String) {
++    let _ = std::thread::Builder::new()
++        .name(format!("uvc-camera-{camera_slot}"))
++        .spawn(move || start_capture(camera_slot, camera_id));
++}
+diff --git a/devices/src/usb/backend/uvc_backend/descriptors.rs b/devices/src/usb/backend/uvc_backend/descriptors.rs
+new file mode 100644
+index 0000000..76a05d7
+--- /dev/null
++++ b/devices/src/usb/backend/uvc_backend/descriptors.rs
+@@ -0,0 +1,373 @@
++﻿// Copyright 2026 The crosvm Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++//! Descriptors of the virtual USB Video Class (UVC 1.1) camera backend.
++//!
++//! The device is a high speed, bulk only MJPEG camera. Interface 0 is the
++//! VideoControl interface (camera terminal, processing unit and streaming
++//! output terminal), interface 1 alternate setting 1 is the VideoStreaming
++//! interface carrying a single bulk IN endpoint.
++
++/// Size of the UVC 1.1 probe/commit control structure in bytes.
++pub const PROBE_LEN: usize = 34;
++
++pub const VENDOR_ID: u16 = 0x0525;
++pub const PRODUCT_ID: u16 = 0xa4a2;
++
++/// Configuration value of the single configuration.
++pub const CONFIG_VALUE: u8 = 1;
++
++/// Native capture size, and the largest frame advertised to the guest. 1080p
++/// frames from the camera HAL are around one megabyte each, which both the HAL
++/// encoder and the emulated xHCI path struggle to sustain, so the largest size
++/// stays at 720p until the host can follow the negotiated size.
++pub const FRAME_WIDTH: u16 = 1920;
++pub const FRAME_HEIGHT: u16 = 1080;
++/// Advertised frame sizes, smallest first; the last one is the default.
++pub const FRAMES: [(u16, u16); 3] = [(640, 480), (1280, 720), (FRAME_WIDTH, FRAME_HEIGHT)];
++/// 60 frames per second, in 100ns units.
++pub const FRAME_INTERVAL_60: u32 = 166_666;
++/// 30 frames per second, in 100ns units.
++pub const FRAME_INTERVAL_30: u32 = 333_333;
++pub const FRAME_INTERVALS: [u32; 2] = [FRAME_INTERVAL_60, FRAME_INTERVAL_30];
++/// Default frame interval, used until the host negotiates something else.
++pub const FRAME_INTERVAL: u32 = FRAME_INTERVAL_60;
++/// Maximum number of payload bytes carried by a single bulk transfer. The
++/// endpoint itself keeps a 512 byte packet size (USB 2.0 high speed limit), but
++/// the host may chain several packets into one bulk URB, so a larger value here
++/// reduces the number of round trips needed for one frame.
++pub const MAX_PAYLOAD_TRANSFER_SIZE: u32 = 262144;
++/// Upper bound of the compressed frame size, as reported to the guest.
++pub const MAX_VIDEO_FRAME_SIZE: u32 = FRAME_WIDTH as u32 * FRAME_HEIGHT as u32 * 2;
++pub const MIN_BIT_RATE: u32 = 800_000;
++pub const MAX_BIT_RATE: u32 = 147_456_000;
++
++pub const CONTROL_INTERFACE: u8 = 0;
++pub const STREAM_INTERFACE: u8 = 1;
++pub const BULK_IN_ENDPOINT: u8 = 0x81;
++/// When true the bulk endpoint is declared in streaming alternate setting 0
++/// instead of a separate alternate setting 1. Windows then never has to switch
++/// the interface setting before streaming.
++pub const ENDPOINT_IN_ALT_ZERO: bool = true;
++/// Status interrupt endpoint of the VideoControl interface.
++pub const STATUS_ENDPOINT: u8 = 0x82;
++pub const CAMERA_TERMINAL_ID: u8 = 1;
++pub const PROCESSING_UNIT_ID: u8 = 2;
++pub const OUTPUT_TERMINAL_ID: u8 = 3;
++
++/// UVC class specific bRequest values.
++pub mod request {
++    pub const SET_CUR: u8 = 0x01;
++    pub const GET_CUR: u8 = 0x81;
++    pub const GET_MIN: u8 = 0x82;
++    pub const GET_MAX: u8 = 0x83;
++    pub const GET_RES: u8 = 0x84;
++    pub const GET_LEN: u8 = 0x85;
++    pub const GET_INFO: u8 = 0x86;
++    pub const GET_DEF: u8 = 0x87;
++}
++
++/// UVC control selectors, in the high byte of wValue.
++pub mod selector {
++    pub const PROBE: u8 = 0x01;
++    pub const COMMIT: u8 = 0x02;
++}
++
++/// The JPEG test pattern sent as video payload while the camera is streaming.
++pub const TEST_PATTERN: &[u8] = include_bytes!("test_pattern.jpg");
++
++/// USB device descriptor. All string indexes are zero: the device carries no
++/// strings, which keeps enumeration simple.
++///
++/// The bcdDevice minor version carries the camera slot, so a VM that exposes two
++/// cameras yields two devices the guest can tell apart instead of two bit
++/// identical ones.
++pub const fn device_descriptor(slot: usize) -> [u8; 18] {
++    [
++        18,   // bLength
++        0x01, // bDescriptorType = DEVICE
++        0x00, 0x02, // bcdUSB = 2.00
++        0xef, // bDeviceClass = Miscellaneous
++        0x02, // bDeviceSubClass = Common Class
++        0x01, // bDeviceProtocol = Interface Association Descriptor
++        64,   // bMaxPacketSize0
++        (VENDOR_ID & 0xff) as u8,
++        (VENDOR_ID >> 8) as u8,
++        (PRODUCT_ID & 0xff) as u8,
++        (PRODUCT_ID >> 8) as u8,
++        (slot & 0x3f) as u8, 0x01, // bcdDevice = 1.<slot>
++        0,    // iManufacturer
++        0,    // iProduct
++        0,    // iSerialNumber
++        1,    // bNumConfigurations
++    ]
++}
++
++/// Builds the UVC 1.1 probe/commit structure with the current defaults.
++pub fn default_probe() -> [u8; PROBE_LEN] {
++    let mut probe = [0u8; PROBE_LEN];
++    probe[2] = 1; // bFormatIndex
++    probe[3] = 1; // bFrameIndex
++    probe[4..8].copy_from_slice(&FRAME_INTERVAL.to_le_bytes());
++    probe[18..22].copy_from_slice(&MAX_VIDEO_FRAME_SIZE.to_le_bytes());
++    probe[22..26].copy_from_slice(&MAX_PAYLOAD_TRANSFER_SIZE.to_le_bytes());
++    // dwClockFrequency stays zero: the camera is not locked to a clock.
++    probe[30] = 0; // bmFramingInfo
++    probe[31] = 0x10; // bPreferredVersion
++    probe[32] = 0x10; // bMinVersion
++    probe[33] = 0x10; // bMaxVersion
++    probe
++}
++
++fn u16le(value: u16) -> [u8; 2] {
++    value.to_le_bytes()
++}
++
++fn u32le(value: u32) -> [u8; 4] {
++    value.to_le_bytes()
++}
++
++/// Builds the configuration descriptor set, computing every length field and
++/// the class specific headers' wTotalLength values from the descriptors that
++/// actually follow them.
++pub fn config_descriptor() -> Vec<u8> {
++    let mut config = Vec::new();
++
++    // Configuration descriptor. wTotalLength is patched at the end.
++    config.extend_from_slice(&[
++        9,          // bLength
++        0x02,       // bDescriptorType = CONFIGURATION
++        0x00, 0x00, // wTotalLength, patched below
++        2,          // bNumInterfaces
++        CONFIG_VALUE, // bConfigurationValue
++        0,          // iConfiguration
++        0x80,       // bmAttributes = bus powered
++        0x32,       // bMaxPower = 100mA
++    ]);
++
++    // Interface Association Descriptor tying the two video interfaces into one
++    // function.
++    config.extend_from_slice(&[
++        8,    // bLength
++        0x0b, // bDescriptorType = INTERFACE_ASSOCIATION
++        CONTROL_INTERFACE,
++        2,    // bInterfaceCount
++        0x0e, // bFunctionClass = Video
++        0x03, // bFunctionSubClass = Video Interface Collection
++        0x00, // bFunctionProtocol
++        0,    // iFunction
++    ]);
++
++    // VideoControl interface, alternate setting 0, status interrupt endpoint.
++    config.extend_from_slice(&[
++        9, // bLength
++        0x04, CONTROL_INTERFACE, 0, 1, // bInterfaceNumber/alt/bNumEndpoints
++        0x0e, 0x01, 0x00, // Video, VideoControl, no protocol
++        0,    // iInterface
++    ]);
++
++    let mut control_specific = Vec::new();
++
++    // VC Interface Header, 13 bytes, wTotalLength patched below.
++    control_specific.extend_from_slice(&[
++        13,   // bLength
++        0x24, // bDescriptorType = CS_INTERFACE
++        0x01, // bDescriptorSubtype = VC_HEADER
++        0x10, 0x01, // bcdUVC = 1.10
++        0x00, 0x00, // wTotalLength, patched below
++        0x00, 0x6c, 0xdc, 0x02, // dwClockFrequency = 48 MHz
++        1, // bInCollection
++        STREAM_INTERFACE, // baInterfaceNr[0]
++    ]);
++
++    // Input Terminal: the camera sensor itself.
++    control_specific.extend_from_slice(&[
++        18,   // bLength
++        0x24, // CS_INTERFACE
++        0x02, // VC_INPUT_TERMINAL
++        CAMERA_TERMINAL_ID, // bTerminalID
++        0x01, 0x02, // wTerminalType = ITT_CAMERA
++        0,    // bAssocTerminal
++        0,    // iTerminal
++        0x00, 0x00, // wObjectiveFocalLengthMin
++        0x00, 0x00, // wObjectiveFocalLengthMax
++        0x00, 0x00, // wOcularFocalLength
++        3,    // bControlSize
++        0, 0, 0, // bmControls
++    ]);
++
++    // Processing Unit.
++    control_specific.extend_from_slice(&[
++        13,   // bLength
++        0x24, // CS_INTERFACE
++        0x05, // VC_PROCESSING_UNIT
++        PROCESSING_UNIT_ID, // bUnitID
++        CAMERA_TERMINAL_ID, // bSourceID
++        0x00, 0x00, // wMaxMultiplier
++        3,    // bControlSize
++        0, 0, 0, // bmControls
++        0,    // iProcessing
++        0,    // bmVideoStandards
++    ]);
++
++    // Output Terminal: the USB streaming pipe.
++    control_specific.extend_from_slice(&[
++        9,    // bLength
++        0x24, // CS_INTERFACE
++        0x03, // VC_OUTPUT_TERMINAL
++        OUTPUT_TERMINAL_ID, // bTerminalID
++        0x01, 0x01, // wTerminalType = TT_STREAMING
++        0,    // bAssocTerminal
++        PROCESSING_UNIT_ID, // bSourceID
++        0,    // iTerminal
++    ]);
++
++    // Patch the VC header's wTotalLength with the real size of the block.
++    let vc_total = control_specific.len() as u16;
++    control_specific[5..7].copy_from_slice(&u16le(vc_total));
++    config.extend_from_slice(&control_specific);
++
++    // Status interrupt endpoint of the VideoControl interface, carrying class
++    // specific event notifications (UVC 1.1 sections 3.8 and 3.9).
++    config.extend_from_slice(&[
++        7,    // bLength
++        0x05, // bDescriptorType = ENDPOINT
++        STATUS_ENDPOINT,
++        0x03, // bmAttributes = interrupt
++        0x10, 0x00, // wMaxPacketSize = 16
++        8,    // bInterval = 8 frames
++    ]);
++
++    // VideoStreaming interface, alternate setting 0.
++    config.extend_from_slice(&[
++        9, // bLength
++        0x04,
++        STREAM_INTERFACE,
++        0,
++        if ENDPOINT_IN_ALT_ZERO { 1 } else { 0 }, // bNumEndpoints
++        0x0e, 0x02, 0x00, // Video, VideoStreaming, no protocol
++        0,    // iInterface
++    ]);
++
++    let mut stream_specific = Vec::new();
++
++    // VS Input Header, 14 bytes, wTotalLength patched below.
++    stream_specific.extend_from_slice(&[
++        14,   // bLength
++        0x24, // CS_INTERFACE
++        0x01, // VS_INPUT_HEADER
++        1,    // bNumFormats
++        0x00, 0x00, // wTotalLength, patched below
++        BULK_IN_ENDPOINT, // bEndpointAddress
++        0,      // bmInfo
++        OUTPUT_TERMINAL_ID, // bTerminalLink
++        0,      // bStillCaptureMethod
++        0,      // bTriggerSupport
++        0,      // bTriggerUsage
++        1,      // bControlSize
++        0,      // bmaControls[0]
++    ]);
++
++    // MJPEG format descriptor.
++    stream_specific.extend_from_slice(&[
++        11,   // bLength
++        0x24, // CS_INTERFACE
++        0x06, // VS_FORMAT_MJPEG
++        1,    // bFormatIndex
++        FRAMES.len() as u8, // bNumFrameDescriptors
++        0,    // bmFlags = not fixed size
++        FRAMES.len() as u8, // bDefaultFrameIndex (largest size)
++        0,    // bAspectRatioX
++        0,    // bAspectRatioY
++        0,    // bmInterlaceFlags
++        0,    // bCopyProtect
++    ]);
++
++    // MJPEG frame descriptors, one per advertised size, two discrete intervals
++    // each (60 fps and 30 fps).
++    for (index, (width, height)) in FRAMES.iter().enumerate() {
++        let mut frame = Vec::new();
++        frame.push((26 + 4 * FRAME_INTERVALS.len()) as u8); // bLength
++        frame.extend_from_slice(&[0x24, 0x07]); // CS_INTERFACE, VS_FRAME_MJPEG
++        frame.push(index as u8 + 1); // bFrameIndex
++        frame.push(0); // bmCapabilities
++        frame.extend_from_slice(&u16le(*width));
++        frame.extend_from_slice(&u16le(*height));
++        frame.extend_from_slice(&u32le(MIN_BIT_RATE));
++        frame.extend_from_slice(&u32le(MAX_BIT_RATE));
++        frame.extend_from_slice(&u32le(*width as u32 * *height as u32 * 2));
++        frame.extend_from_slice(&u32le(FRAME_INTERVAL_60)); // dwDefaultFrameInterval
++        frame.push(FRAME_INTERVALS.len() as u8); // bFrameIntervalType = discrete
++        for interval in FRAME_INTERVALS {
++            frame.extend_from_slice(&u32le(interval));
++        }
++        stream_specific.extend_from_slice(&frame);
++    }
++
++    // The VS input header stores bNumFormats before wTotalLength, so the length
++    // lives at bytes 4..6 (the VC header has bcdUVC in between, at 5..7).
++    let vs_total = stream_specific.len() as u16;
++    stream_specific[4..6].copy_from_slice(&u16le(vs_total));
++    config.extend_from_slice(&stream_specific);
++
++    if ENDPOINT_IN_ALT_ZERO {
++        // The bulk endpoint lives in alternate setting 0, so the host does not
++        // have to switch settings before streaming. Empty and bulk only cameras
++        // that are known to work with Windows (and the QEMU UVC prototype) use
++        // this layout.
++        config.extend_from_slice(&[
++            7,    // bLength
++            0x05, // bDescriptorType = ENDPOINT
++            BULK_IN_ENDPOINT,
++            0x02, // bmAttributes = bulk
++            0x00, 0x02, // wMaxPacketSize = 512
++            0,    // bInterval
++        ]);
++    } else {
++        // VideoStreaming interface, alternate setting 1: the bulk IN endpoint.
++        config.extend_from_slice(&[
++            9, // bLength
++            0x04, STREAM_INTERFACE, 1, 1, // bInterfaceNumber/alt/bNumEndpoints
++            0x0e, 0x02, 0x00, // Video, VideoStreaming, no protocol
++            0,    // iInterface
++        ]);
++
++        // Bulk IN endpoint, 512 byte packets, high speed.
++        config.extend_from_slice(&[
++            7,    // bLength
++            0x05, // bDescriptorType = ENDPOINT
++            BULK_IN_ENDPOINT,
++            0x02, // bmAttributes = bulk
++            0x00, 0x02, // wMaxPacketSize = 512
++            0,    // bInterval
++        ]);
++    }
++
++    let total = config.len() as u16;
++    config[2..4].copy_from_slice(&u16le(total));
++    config
++}
++
++/// Collects the class specific (CS_INTERFACE, type 0x24) descriptors that
++/// follow the given interface descriptor inside a configuration descriptor set.
++pub fn class_specific_descriptors(config: &[u8], interface: u8) -> Vec<u8> {
++    let mut block = Vec::new();
++    let mut offset = 0;
++    let mut inside = false;
++    while offset + 2 <= config.len() {
++        let length = config[offset] as usize;
++        if length < 2 || offset + length > config.len() {
++            break;
++        }
++        match config[offset + 1] {
++            // INTERFACE: the class specific descriptors of an interface
++            // immediately follow it.
++            0x04 => inside = config[offset + 2] == interface,
++            0x24 if inside => block.extend_from_slice(&config[offset..offset + length]),
++            _ => {}
++        }
++        offset += length;
++    }
++    block
++}
+diff --git a/devices/src/usb/backend/uvc_backend/jpeg.rs b/devices/src/usb/backend/uvc_backend/jpeg.rs
+new file mode 100644
+index 0000000..690974b
+--- /dev/null
++++ b/devices/src/usb/backend/uvc_backend/jpeg.rs
+@@ -0,0 +1,599 @@
++// Copyright 2026 The crosvm Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++//! A small baseline JPEG encoder for 4:2:0 YUV frames.
++//!
++//! The virtual UVC camera streams MJPEG, so frames coming from the Android
++//! camera (which hands out `YUV_420_888`) have to be turned into JPEG. This
++//! encoder is self contained on purpose: no C library, no extra crate, just
++//! baseline sequential JPEG with optimal Huffman tables that are computed from
++//! the frame itself.
++//!
++//! It is a straight port of the well known IJG structure: forward DCT per 8x8
++//! block, quality scaled quantization tables, then two entropy passes (the
++//! first one collects symbol statistics, the second one emits the data).
++
++/// Luminance quantization table, in natural (row major) order.
++const STD_LUMA_QUANT: [u8; 64] = [
++    16, 11, 10, 16, 24, 40, 51, 61, 12, 12, 14, 19, 26, 58, 60, 55, 14, 13, 16, 24, 40, 57, 69, 56,
++    14, 17, 22, 29, 51, 87, 80, 62, 18, 22, 37, 56, 68, 109, 103, 77, 24, 35, 55, 64, 81, 104, 113,
++    92, 49, 64, 78, 87, 103, 121, 120, 101, 72, 92, 95, 98, 112, 100, 103, 99,
++];
++
++/// Chrominance quantization table, in natural (row major) order.
++const STD_CHROMA_QUANT: [u8; 64] = [
++    17, 18, 24, 47, 99, 99, 99, 99, 18, 21, 26, 66, 99, 99, 99, 99, 24, 26, 56, 99, 99, 99, 99, 99,
++    47, 66, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99,
++    99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99,
++];
++
++/// Maps a zigzag index to the natural (row major) coefficient index.
++const ZIGZAG: [usize; 64] = [
++    0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48, 41, 34, 27, 20,
++    13, 6, 7, 14, 21, 28, 35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51, 58, 59,
++    52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63,
++];
++
++fn scaled_quant_table(base: &[u8; 64], quality: u8) -> [u8; 64] {
++    let quality = quality.clamp(1, 100) as i32;
++    let scale = if quality < 50 {
++        5000 / quality
++    } else {
++        200 - quality * 2
++    };
++    let mut table = [0u8; 64];
++    for (dst, src) in table.iter_mut().zip(base.iter()) {
++        let value = ((i32::from(*src) * scale + 50) / 100).clamp(1, 255);
++        *dst = value as u8;
++    }
++    table
++}
++
++/// Forward DCT cosine table: `COS[u][x]`.
++fn cosine_table() -> [[f32; 8]; 8] {
++    let mut table = [[0f32; 8]; 8];
++    for (u, row) in table.iter_mut().enumerate() {
++        for (x, value) in row.iter_mut().enumerate() {
++            let angle = (2.0 * x as f32 + 1.0) * u as f32 * std::f32::consts::PI / 16.0;
++            let norm = if u == 0 {
++                std::f32::consts::FRAC_1_SQRT_2
++            } else {
++                1.0
++            };
++            *value = 0.5 * norm * angle.cos();
++        }
++    }
++    table
++}
++
++/// Forward DCT of one 8x8 block, output in natural order.
++fn fdct(block: &[f32; 64], cos: &[[f32; 8]; 8], out: &mut [f32; 64]) {
++    let mut temp = [0f32; 64];
++    for y in 0..8 {
++        for u in 0..8 {
++            let mut sum = 0f32;
++            for x in 0..8 {
++                sum += block[y * 8 + x] * cos[u][x];
++            }
++            temp[y * 8 + u] = sum;
++        }
++    }
++    for x in 0..8 {
++        for v in 0..8 {
++            let mut sum = 0f32;
++            for y in 0..8 {
++                sum += temp[y * 8 + x] * cos[v][y];
++            }
++            out[v * 8 + x] = sum;
++        }
++    }
++}
++
++/// Number of bits needed for the magnitude of `value`.
++fn category(value: i32) -> u8 {
++    let mut magnitude = value.unsigned_abs();
++    let mut bits = 0u8;
++    while magnitude != 0 {
++        magnitude >>= 1;
++        bits += 1;
++    }
++    bits
++}
++
++/// A JPEG Huffman table with canonical codes.
++struct HuffTable {
++    bits: [u8; 17],
++    values: Vec<u8>,
++    codes: [(u16, u8); 256],
++}
++
++impl HuffTable {
++    /// Builds a length limited Huffman table from symbol frequencies, the same
++    /// way libjpeg's `jpeg_gen_optimal_table` does.
++    fn from_frequencies(freq: &[i64; 257]) -> HuffTable {
++        // Pseudo symbol 256 keeps the all-ones code free for padding.
++        let original = *freq;
++        let mut freq = original;
++        freq[256] = 1;
++
++        let mut codesize = [0usize; 257];
++        let mut others = [-1i64; 257];
++        loop {
++            let mut c1 = usize::MAX;
++            let mut v1 = i64::MAX;
++            for i in 0..=256 {
++                if freq[i] != 0 && freq[i] <= v1 {
++                    v1 = freq[i];
++                    c1 = i;
++                }
++            }
++            let mut c2 = usize::MAX;
++            let mut v2 = i64::MAX;
++            for i in 0..=256 {
++                if freq[i] != 0 && freq[i] <= v2 && i != c1 {
++                    v2 = freq[i];
++                    c2 = i;
++                }
++            }
++            if c1 == usize::MAX || c2 == usize::MAX {
++                break;
++            }
++            freq[c1] += freq[c2];
++            freq[c2] = 0;
++
++            codesize[c1] += 1;
++            let mut node = c1;
++            while others[node] >= 0 {
++                node = others[node] as usize;
++                codesize[node] += 1;
++            }
++            others[node] = c2 as i64;
++
++            codesize[c2] += 1;
++            let mut node = c2;
++            while others[node] >= 0 {
++                node = others[node] as usize;
++                codesize[node] += 1;
++            }
++        }
++
++        let mut bits = [0u32; 33];
++        for size in codesize.iter() {
++            bits[*size] += 1;
++        }
++
++        // Move symbols out of code lengths above 16, JPEG cannot represent them.
++        for i in (17..=32).rev() {
++            while bits[i] > 0 {
++                let mut j = i - 2;
++                while bits[j] == 0 {
++                    j -= 1;
++                }
++                bits[i] -= 2;
++                bits[i - 1] += 1;
++                bits[j + 1] += 2;
++                bits[j] -= 1;
++            }
++        }
++
++        // Drop the pseudo symbol from the longest code length.
++        let mut longest = 16;
++        while longest > 0 && bits[longest] == 0 {
++            longest -= 1;
++        }
++        bits[longest] -= 1;
++
++        // Assign the final code lengths: shortest codes to the symbols that had
++        // the shortest codes before the length adjustment.
++        let mut symbols: Vec<u8> = (0..=255u8).filter(|s| original[*s as usize] != 0).collect();
++        symbols.sort_by_key(|s| (codesize[*s as usize], *s));
++
++        let mut values = Vec::with_capacity(symbols.len());
++        let mut codes = [(0u16, 0u8); 256];
++        let mut code: u32 = 0;
++        let mut index = 0;
++        for length in 1..=16usize {
++            for _ in 0..bits[length] {
++                if index >= symbols.len() {
++                    break;
++                }
++                let symbol = symbols[index];
++                codes[symbol as usize] = (code as u16, length as u8);
++                values.push(symbol);
++                code += 1;
++                index += 1;
++            }
++            code <<= 1;
++        }
++
++        let mut table_bits = [0u8; 17];
++        for length in 1..=16usize {
++            table_bits[length] = bits[length].min(255) as u8;
++        }
++
++        HuffTable {
++            bits: table_bits,
++            values,
++            codes,
++        }
++    }
++}
++
++/// Bit writer that performs JPEG byte stuffing.
++struct BitWriter {
++    out: Vec<u8>,
++    accumulator: u32,
++    count: u8,
++}
++
++impl BitWriter {
++    fn new(capacity: usize) -> BitWriter {
++        BitWriter {
++            out: Vec::with_capacity(capacity),
++            accumulator: 0,
++            count: 0,
++        }
++    }
++
++    fn write_bits(&mut self, value: u32, length: u8) {
++        if length == 0 {
++            return;
++        }
++        self.accumulator = (self.accumulator << length) | (value & ((1u32 << length) - 1));
++        self.count += length;
++        while self.count >= 8 {
++            let byte = ((self.accumulator >> (self.count - 8)) & 0xff) as u8;
++            self.out.push(byte);
++            if byte == 0xff {
++                self.out.push(0x00);
++            }
++            self.count -= 8;
++        }
++        if self.count == 0 {
++            self.accumulator = 0;
++        } else {
++            self.accumulator &= (1u32 << self.count) - 1;
++        }
++    }
++
++    fn write_symbol(&mut self, table: &HuffTable, symbol: u8) {
++        let (code, length) = table.codes[symbol as usize];
++        self.write_bits(u32::from(code), length);
++    }
++
++    fn write_value(&mut self, value: i32, category: u8) {
++        if category == 0 {
++            return;
++        }
++        let bits = if value < 0 {
++            (value + (1 << category) - 1) as u32
++        } else {
++            value as u32
++        };
++        self.write_bits(bits, category);
++    }
++
++    fn flush(&mut self) {
++        if self.count > 0 {
++            let padding = 8 - self.count;
++            self.write_bits((1 << padding) - 1, padding);
++        }
++    }
++}
++
++/// A block of quantized coefficients, in zigzag order.
++type Coefficients = [i16; 64];
++
++struct Plane {
++    data: Vec<u8>,
++    stride: usize,
++    width: usize,
++    height: usize,
++}
++
++impl Plane {
++    fn pixel(&self, x: usize, y: usize) -> u8 {
++        let x = x.min(self.width.saturating_sub(1));
++        let y = y.min(self.height.saturating_sub(1));
++        self.data[y * self.stride + x]
++    }
++}
++
++fn extract_plane(
++    data: &[u8],
++    stride: usize,
++    width: usize,
++    height: usize,
++    pad_width: usize,
++    pad_height: usize,
++) -> Plane {
++    let source = Plane {
++        data: data.to_vec(),
++        stride,
++        width,
++        height,
++    };
++    let mut padded = vec![0u8; pad_width * pad_height];
++    for y in 0..pad_height {
++        for x in 0..pad_width {
++            padded[y * pad_width + x] = source.pixel(x, y);
++        }
++    }
++    Plane {
++        data: padded,
++        stride: pad_width,
++        width: pad_width,
++        height: pad_height,
++    }
++}
++
++/// Reads one 8x8 block of an already subsampled chroma plane.
++fn chroma_block(plane: &Plane, x0: usize, y0: usize) -> [f32; 64] {
++    let mut block = [0f32; 64];
++    for y in 0..8 {
++        for x in 0..8 {
++            block[y * 8 + x] = f32::from(plane.pixel(x0 + x, y0 + y)) - 128.0;
++        }
++    }
++    block
++}
++
++fn luma_block(plane: &Plane, x0: usize, y0: usize) -> [f32; 64] {
++    let mut block = [0f32; 64];
++    for y in 0..8 {
++        for x in 0..8 {
++            block[y * 8 + x] = f32::from(plane.pixel(x0 + x, y0 + y)) - 128.0;
++        }
++    }
++    block
++}
++
++fn quantize(
++    block: &[f32; 64],
++    cos: &[[f32; 8]; 8],
++    quant: &[u8; 64],
++    out: &mut Coefficients,
++) {
++    let mut dct = [0f32; 64];
++    fdct(block, cos, &mut dct);
++    for zigzag in 0..64 {
++        let natural = ZIGZAG[zigzag];
++        let value = dct[natural] / f32::from(quant[natural]);
++        out[zigzag] = value.round().clamp(-1023.0, 1023.0) as i16;
++    }
++}
++
++
++fn encode_frame(
++    width: usize,
++    height: usize,
++    quality: u8,
++    luma_data: &[u8],
++    luma_stride: usize,
++    u_data: &[u8],
++    u_stride: usize,
++    v_data: &[u8],
++    v_stride: usize,
++) -> Option<Vec<u8>> {
++    if width == 0 || height == 0 || width % 2 != 0 || height % 2 != 0 {
++        return None;
++    }
++    let pad_width = (width + 15) & !15;
++    let pad_height = (height + 15) & !15;
++    let luma = extract_plane(luma_data, luma_stride, width, height, pad_width, pad_height);
++    let cb_plane = extract_plane(u_data, u_stride, width / 2, height / 2, pad_width / 2, pad_height / 2);
++    let cr_plane = extract_plane(v_data, v_stride, width / 2, height / 2, pad_width / 2, pad_height / 2);
++
++    let cos = cosine_table();
++    let luma_quant = scaled_quant_table(&STD_LUMA_QUANT, quality);
++    let chroma_quant = scaled_quant_table(&STD_CHROMA_QUANT, quality);
++
++    let mcus_x = pad_width / 16;
++    let mcus_y = pad_height / 16;
++
++    let mut luma_blocks: Vec<Coefficients> = Vec::with_capacity(mcus_x * mcus_y * 4);
++    let mut cb_blocks: Vec<Coefficients> = Vec::with_capacity(mcus_x * mcus_y);
++    let mut cr_blocks: Vec<Coefficients> = Vec::with_capacity(mcus_x * mcus_y);
++
++    for my in 0..mcus_y {
++        for mx in 0..mcus_x {
++            let x0 = mx * 16;
++            let y0 = my * 16;
++            for (dx, dy) in [(0, 0), (8, 0), (0, 8), (8, 8)] {
++                let block = luma_block(&luma, x0 + dx, y0 + dy);
++                let mut coefficients = [0i16; 64];
++                quantize(&block, &cos, &luma_quant, &mut coefficients);
++                luma_blocks.push(coefficients);
++            }
++            let block = chroma_block(&cb_plane, x0 / 2, y0 / 2);
++            let mut coefficients = [0i16; 64];
++            quantize(&block, &cos, &chroma_quant, &mut coefficients);
++            cb_blocks.push(coefficients);
++
++            let block = chroma_block(&cr_plane, x0 / 2, y0 / 2);
++            let mut coefficients = [0i16; 64];
++            quantize(&block, &cos, &chroma_quant, &mut coefficients);
++            cr_blocks.push(coefficients);
++        }
++    }
++
++    // Pass one: gather symbol statistics for the optimal Huffman tables.
++    let mut dc_luma_freq = [0i64; 257];
++    let mut ac_luma_freq = [0i64; 257];
++    let mut dc_chroma_freq = [0i64; 257];
++    let mut ac_chroma_freq = [0i64; 257];
++
++    for (index, block) in luma_blocks.iter().enumerate() {
++        let previous = if index == 0 {
++            0
++        } else {
++            luma_blocks[index - 1][0] as i32
++        };
++        collect_block(
++            block,
++            previous,
++            &mut dc_luma_freq,
++            &mut ac_luma_freq,
++        );
++    }
++    for (index, block) in cb_blocks.iter().enumerate() {
++        let previous = if index == 0 { 0 } else { cb_blocks[index - 1][0] as i32 };
++        collect_block(block, previous, &mut dc_chroma_freq, &mut ac_chroma_freq);
++    }
++    for (index, block) in cr_blocks.iter().enumerate() {
++        let previous = if index == 0 { 0 } else { cr_blocks[index - 1][0] as i32 };
++        collect_block(block, previous, &mut dc_chroma_freq, &mut ac_chroma_freq);
++    }
++
++    let dc_luma = HuffTable::from_frequencies(&dc_luma_freq);
++    let ac_luma = HuffTable::from_frequencies(&ac_luma_freq);
++    let dc_chroma = HuffTable::from_frequencies(&dc_chroma_freq);
++    let ac_chroma = HuffTable::from_frequencies(&ac_chroma_freq);
++
++    let mut out: Vec<u8> = Vec::with_capacity(width * height / 4);
++    out.extend_from_slice(&[0xff, 0xd8]); // SOI
++
++    // APP0 / JFIF header.
++    out.extend_from_slice(&[0xff, 0xe0, 0x00, 0x10]);
++    out.extend_from_slice(b"JFIF\0");
++    out.extend_from_slice(&[0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00]);
++
++    // Quantization tables.
++    for (id, table) in [(0u8, &luma_quant), (1u8, &chroma_quant)] {
++        out.extend_from_slice(&[0xff, 0xdb, 0x00, 0x43, id]);
++        let mut zigzag_table = [0u8; 64];
++        for zigzag in 0..64 {
++            zigzag_table[zigzag] = table[ZIGZAG[zigzag]];
++        }
++        out.extend_from_slice(&zigzag_table);
++    }
++
++    // Frame header: baseline, 4:2:0, three components.
++    out.extend_from_slice(&[0xff, 0xc0, 0x00, 0x11, 0x08]);
++    out.extend_from_slice(&(height as u16).to_be_bytes());
++    out.extend_from_slice(&(width as u16).to_be_bytes());
++    out.push(3);
++    out.extend_from_slice(&[1, 0x22, 0x00]);
++    out.extend_from_slice(&[2, 0x11, 0x01]);
++    out.extend_from_slice(&[3, 0x11, 0x01]);
++
++    // Huffman tables: DC luma 0x00, AC luma 0x10, DC chroma 0x01, AC chroma 0x11.
++    for (class_id, table) in [(0x00u8, &dc_luma), (0x10u8, &ac_luma), (0x01u8, &dc_chroma), (0x11u8, &ac_chroma)] {
++        let mut payload: Vec<u8> = Vec::with_capacity(17 + table.values.len());
++        payload.push(class_id);
++        payload.extend_from_slice(&table.bits[1..17]);
++        payload.extend_from_slice(&table.values);
++        out.extend_from_slice(&[0xff, 0xc4]);
++        out.extend_from_slice(&((payload.len() + 2) as u16).to_be_bytes());
++        out.extend_from_slice(&payload);
++    }
++
++    // Scan header.
++    out.extend_from_slice(&[0xff, 0xda, 0x00, 0x0c, 0x03]);
++    out.extend_from_slice(&[1, 0x00]);
++    out.extend_from_slice(&[2, 0x11]);
++    out.extend_from_slice(&[3, 0x11]);
++    out.extend_from_slice(&[0x00, 0x3f, 0x00]);
++
++    let mut writer = BitWriter::new(width * height / 4);
++    let mut previous_dc = [0i32; 3];
++    for index in 0..luma_blocks.len() {
++        let block = &luma_blocks[index];
++        write_block(
++            &mut writer,
++            block,
++            &mut previous_dc[0],
++            &dc_luma,
++            &ac_luma,
++        );
++        if index % 4 == 3 {
++            let mcu = index / 4;
++            write_block(&mut writer, &cb_blocks[mcu], &mut previous_dc[1], &dc_chroma, &ac_chroma);
++            write_block(&mut writer, &cr_blocks[mcu], &mut previous_dc[2], &dc_chroma, &ac_chroma);
++        }
++    }
++    writer.flush();
++    out.extend_from_slice(&writer.out);
++    out.extend_from_slice(&[0xff, 0xd9]); // EOI
++    Some(out)
++}
++
++fn collect_block(
++    block: &Coefficients,
++    previous_dc: i32,
++    dc_freq: &mut [i64; 257],
++    ac_freq: &mut [i64; 257],
++) {
++    let difference = i32::from(block[0]) - previous_dc;
++    dc_freq[category(difference) as usize] += 1;
++    let mut run = 0usize;
++    for zigzag in 1..64 {
++        let value = i32::from(block[zigzag]);
++        if value == 0 {
++            run += 1;
++            continue;
++        }
++        while run > 15 {
++            ac_freq[0xf0] += 1;
++            run -= 16;
++        }
++        ac_freq[(run << 4) | category(value) as usize] += 1;
++        run = 0;
++    }
++    if run > 0 {
++        ac_freq[0x00] += 1;
++    }
++}
++
++fn write_block(
++    writer: &mut BitWriter,
++    block: &Coefficients,
++    previous_dc: &mut i32,
++    dc_table: &HuffTable,
++    ac_table: &HuffTable,
++) {
++    let difference = i32::from(block[0]) - *previous_dc;
++    *previous_dc = i32::from(block[0]);
++    let dc_category = category(difference);
++    writer.write_symbol(dc_table, dc_category);
++    writer.write_value(difference, dc_category);
++
++    let mut run = 0u8;
++    for zigzag in 1..64 {
++        let value = i32::from(block[zigzag]);
++        if value == 0 {
++            run += 1;
++            continue;
++        }
++        while run > 15 {
++            writer.write_symbol(ac_table, 0xf0);
++            run -= 16;
++        }
++        let ac_category = category(value);
++        writer.write_symbol(ac_table, (run << 4) | ac_category);
++        writer.write_value(value, ac_category);
++        run = 0;
++    }
++    if run > 0 {
++        writer.write_symbol(ac_table, 0x00);
++    }
++}
++
++/// Encodes a `YUV_420_888` frame (three planes with their own row strides) into
++/// a baseline JPEG image.
++pub fn encode_yuv420(
++    width: usize,
++    height: usize,
++    quality: u8,
++    y: &[u8],
++    y_stride: usize,
++    u: &[u8],
++    u_stride: usize,
++    v: &[u8],
++    v_stride: usize,
++) -> Option<Vec<u8>> {
++    encode_frame(
++        width, height, quality, y, y_stride, u, u_stride, v, v_stride,
++    )
++}
+diff --git a/devices/src/usb/backend/uvc_backend/mediacodec.rs b/devices/src/usb/backend/uvc_backend/mediacodec.rs
+new file mode 100644
+index 0000000..47e7f41
+--- /dev/null
++++ b/devices/src/usb/backend/uvc_backend/mediacodec.rs
+@@ -0,0 +1,355 @@
++// Copyright 2026 The crosvm Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++//! Hardware JPEG frame source for the emulated camera.
++//!
++//! The phone's camera pipeline can render straight into a MediaCodec JPEG
++//! encoder surface, which is far faster than the software encoder in
++//! [`super::jpeg`]: one 1080p frame costs about 150 ms on the CPU but only a few
++//! milliseconds in hardware, which is what 1080p60 needs.
++//!
++//! The media stack is loaded with `dlopen`, exactly like the camera bindings, so
++//! a device without a JPEG encoder just falls back to the software path.
++
++use std::ffi::{c_char, c_int, c_void, CString};
++use std::sync::OnceLock;
++
++use base::info;
++
++const RTLD_NOW: c_int = 2;
++
++extern "C" {
++    fn dlopen(filename: *const c_char, flag: c_int) -> *mut c_void;
++    fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
++}
++
++/// A `dlopen`ed shared library.
++struct Lib {
++    handle: *mut c_void,
++}
++
++impl Lib {
++    fn open(name: &str) -> Option<Lib> {
++        let cname = CString::new(name).ok()?;
++        // SAFETY: `cname` is a valid NUL terminated string.
++        let handle = unsafe { dlopen(cname.as_ptr(), RTLD_NOW) };
++        if handle.is_null() {
++            None
++        } else {
++            Some(Lib { handle })
++        }
++    }
++
++    fn sym(&self, name: &str) -> Option<*mut c_void> {
++        let cname = CString::new(name).ok()?;
++        // SAFETY: `self.handle` comes from a successful `dlopen`.
++        let pointer = unsafe { dlsym(self.handle, cname.as_ptr()) };
++        if pointer.is_null() {
++            None
++        } else {
++            Some(pointer)
++        }
++    }
++}
++
++macro_rules! bind {
++    ($lib:expr, $out:ident, $name:literal, $ty:ty) => {
++        let $out: $ty = match $lib.sym($name) {
++            // SAFETY: the symbol exists and its declared signature matches the
++            // NDK media C API.
++            Some(pointer) => unsafe { std::mem::transmute::<*mut c_void, $ty>(pointer) },
++            None => return None,
++        };
++    };
++}
++
++/// `AMediaFormat` is an opaque handle.
++type AMediaFormat = c_void;
++/// `AMediaCodec` is an opaque handle.
++type AMediaCodec = c_void;
++
++#[repr(C)]
++struct BufferInfo {
++    offset: i32,
++    size: i32,
++    presentation_time_us: i64,
++    flags: u32,
++}
++
++/// `COLOR_FormatSurface`: the input format of a surface fed encoder.
++const COLOR_FORMAT_SURFACE: i32 = 0x7f00_0789;
++const CONFIGURE_FLAG_ENCODE: u32 = 1;
++const BUFFER_FLAG_CODEC_CONFIG: u32 = 2;
++const INFO_TRY_AGAIN_LATER: isize = -1;
++const INFO_OUTPUT_FORMAT_CHANGED: isize = -2;
++const INFO_OUTPUT_BUFFERS_CHANGED: isize = -3;
++
++struct Api {
++    _lib: Lib,
++    codec_create_encoder_by_type: unsafe extern "C" fn(*const c_char) -> *mut AMediaCodec,
++    codec_configure: unsafe extern "C" fn(
++        *mut AMediaCodec,
++        *const AMediaFormat,
++        *mut c_void,
++        *mut c_void,
++        u32,
++    ) -> i32,
++    codec_create_input_surface: unsafe extern "C" fn(*mut AMediaCodec, *mut *mut c_void) -> i32,
++    codec_start: unsafe extern "C" fn(*mut AMediaCodec) -> i32,
++    codec_stop: unsafe extern "C" fn(*mut AMediaCodec) -> i32,
++    codec_dequeue_output: unsafe extern "C" fn(*mut AMediaCodec, *mut BufferInfo, i64) -> isize,
++    codec_get_output_buffer: unsafe extern "C" fn(*mut AMediaCodec, usize, *mut usize) -> *mut u8,
++    codec_release_output: unsafe extern "C" fn(*mut AMediaCodec, usize, bool) -> i32,
++    format_new: unsafe extern "C" fn() -> *mut AMediaFormat,
++    format_delete: unsafe extern "C" fn(*mut AMediaFormat),
++    format_set_int32: unsafe extern "C" fn(*mut AMediaFormat, *const c_char, i32) -> i32,
++    format_set_string: unsafe extern "C" fn(*mut AMediaFormat, *const c_char, *const c_char) -> i32,
++}
++
++// SAFETY: the resolved function pointers are immutable and the library stays
++// loaded for the lifetime of the process.
++unsafe impl Send for Api {}
++unsafe impl Sync for Api {}
++
++fn api() -> Option<&'static Api> {
++    static API: OnceLock<Option<Api>> = OnceLock::new();
++    API.get_or_init(|| {
++        let lib = Lib::open("libmediandk.so")?;
++        bind!(
++            lib,
++            codec_create_encoder_by_type,
++            "AMediaCodec_createEncoderByType",
++            unsafe extern "C" fn(*const c_char) -> *mut AMediaCodec
++        );
++        bind!(
++            lib,
++            codec_configure,
++            "AMediaCodec_configure",
++            unsafe extern "C" fn(
++                *mut AMediaCodec,
++                *const AMediaFormat,
++                *mut c_void,
++                *mut c_void,
++                u32
++            ) -> i32
++        );
++        bind!(
++            lib,
++            codec_create_input_surface,
++            "AMediaCodec_createInputSurface",
++            unsafe extern "C" fn(*mut AMediaCodec, *mut *mut c_void) -> i32
++        );
++        bind!(
++            lib,
++            codec_start,
++            "AMediaCodec_start",
++            unsafe extern "C" fn(*mut AMediaCodec) -> i32
++        );
++        bind!(
++            lib,
++            codec_stop,
++            "AMediaCodec_stop",
++            unsafe extern "C" fn(*mut AMediaCodec) -> i32
++        );
++        bind!(
++            lib,
++            codec_dequeue_output,
++            "AMediaCodec_dequeueOutputBuffer",
++            unsafe extern "C" fn(*mut AMediaCodec, *mut BufferInfo, i64) -> isize
++        );
++        bind!(
++            lib,
++            codec_get_output_buffer,
++            "AMediaCodec_getOutputBuffer",
++            unsafe extern "C" fn(*mut AMediaCodec, usize, *mut usize) -> *mut u8
++        );
++        bind!(
++            lib,
++            codec_release_output,
++            "AMediaCodec_releaseOutputBuffer",
++            unsafe extern "C" fn(*mut AMediaCodec, usize, bool) -> i32
++        );
++        bind!(
++            lib,
++            format_new,
++            "AMediaFormat_new",
++            unsafe extern "C" fn() -> *mut AMediaFormat
++        );
++        bind!(
++            lib,
++            format_delete,
++            "AMediaFormat_delete",
++            unsafe extern "C" fn(*mut AMediaFormat)
++        );
++        bind!(
++            lib,
++            format_set_int32,
++            "AMediaFormat_setInt32",
++            unsafe extern "C" fn(*mut AMediaFormat, *const c_char, i32) -> i32
++        );
++        bind!(
++            lib,
++            format_set_string,
++            "AMediaFormat_setString",
++            unsafe extern "C" fn(*mut AMediaFormat, *const c_char, *const c_char) -> i32
++        );
++        Some(Api {
++            _lib: lib,
++            codec_create_encoder_by_type,
++            codec_configure,
++            codec_create_input_surface,
++            codec_start,
++            codec_stop,
++            codec_dequeue_output,
++            codec_get_output_buffer,
++            codec_release_output,
++            format_new,
++            format_delete,
++            format_set_int32,
++            format_set_string,
++        })
++    })
++    .as_ref()
++}
++
++fn log(line: &str) {
++    info!("uvc: {line}");
++}
++
++/// Hardware JPEG encoder fed by the camera.
++pub struct JpegEncoder {
++    codec: *mut AMediaCodec,
++    surface: *mut c_void,
++    info: BufferInfo,
++    frames: u64,
++}
++
++// SAFETY: the handle is only touched from the capture thread.
++unsafe impl Send for JpegEncoder {}
++
++impl JpegEncoder {
++    /// Builds a JPEG encoder whose input surface the camera can render into.
++    pub fn create(width: i32, height: i32, quality: i32) -> Option<JpegEncoder> {
++        let api = api()?;
++        let mime = CString::new("image/jpeg").ok()?;
++        // SAFETY: every call follows the NDK media contract; failures are
++        // reported through status codes and mapped to `None`.
++        unsafe {
++            let codec = (api.codec_create_encoder_by_type)(mime.as_ptr());
++            if codec.is_null() {
++                log("encoder: no image/jpeg encoder");
++                return None;
++            }
++            let format = (api.format_new)();
++            if format.is_null() {
++                log("encoder: AMediaFormat_new failed");
++                return None;
++            }
++            let key_mime = CString::new("mime").ok()?;
++            let key_width = CString::new("width").ok()?;
++            let key_height = CString::new("height").ok()?;
++            let key_color = CString::new("color-format").ok()?;
++            let key_quality = CString::new("quality").ok()?;
++            (api.format_set_string)(format, key_mime.as_ptr(), mime.as_ptr());
++            (api.format_set_int32)(format, key_width.as_ptr(), width);
++            (api.format_set_int32)(format, key_height.as_ptr(), height);
++            (api.format_set_int32)(format, key_color.as_ptr(), COLOR_FORMAT_SURFACE);
++            (api.format_set_int32)(format, key_quality.as_ptr(), quality);
++            let status = (api.codec_configure)(
++                codec,
++                format,
++                std::ptr::null_mut(),
++                std::ptr::null_mut(),
++                CONFIGURE_FLAG_ENCODE,
++            );
++            (api.format_delete)(format);
++            if status != 0 {
++                log(&format!("encoder: configure failed status={status}"));
++                return None;
++            }
++            let mut surface: *mut c_void = std::ptr::null_mut();
++            let status = (api.codec_create_input_surface)(codec, &mut surface);
++            if status != 0 || surface.is_null() {
++                log(&format!("encoder: createInputSurface failed status={status}"));
++                return None;
++            }
++            let status = (api.codec_start)(codec);
++            if status != 0 {
++                log(&format!("encoder: start failed status={status}"));
++                return None;
++            }
++            log(&format!(
++                "encoder: jpeg {width}x{height} quality={quality} ready"
++            ));
++            Some(JpegEncoder {
++                codec,
++                surface,
++                info: BufferInfo {
++                    offset: 0,
++                    size: 0,
++                    presentation_time_us: 0,
++                    flags: 0,
++                },
++                frames: 0,
++            })
++        }
++    }
++
++    /// Window the camera should render into.
++    pub fn surface(&self) -> *mut c_void {
++        self.surface
++    }
++
++    /// Number of JPEG frames produced so far.
++    pub fn frames(&self) -> u64 {
++        self.frames
++    }
++
++    /// Drains finished frames and returns the newest JPEG, if any.
++    pub fn poll(&mut self) -> Option<Vec<u8>> {
++        let api = api()?;
++        loop {
++            // SAFETY: `codec` is live and `info` is a valid out-parameter.
++            let index = unsafe { (api.codec_dequeue_output)(self.codec, &mut self.info, 0) };
++            if index >= 0 {
++                let index = index as usize;
++                let mut size = 0usize;
++                // SAFETY: the buffer stays valid until it is released below.
++                let data = unsafe { (api.codec_get_output_buffer)(self.codec, index, &mut size) };
++                let skip = self.info.flags & BUFFER_FLAG_CODEC_CONFIG != 0;
++                let jpeg = if !data.is_null() && size > 0 && !skip {
++                    // SAFETY: `data` points at `size` readable bytes.
++                    let slice = unsafe { std::slice::from_raw_parts(data, size) };
++                    self.frames += 1;
++                    Some(slice.to_vec())
++                } else {
++                    None
++                };
++                unsafe { (api.codec_release_output)(self.codec, index, false) };
++                if jpeg.is_some() {
++                    return jpeg;
++                }
++                continue;
++            }
++            if index == INFO_OUTPUT_FORMAT_CHANGED || index == INFO_OUTPUT_BUFFERS_CHANGED {
++                continue;
++            }
++            if index == INFO_TRY_AGAIN_LATER {
++                return None;
++            }
++            return None;
++        }
++    }
++}
++
++impl Drop for JpegEncoder {
++    fn drop(&mut self) {
++        if let Some(api) = api() {
++            // SAFETY: the codec is owned by `self` and stopped once.
++            unsafe {
++                (api.codec_stop)(self.codec);
++            }
++        }
++    }
++}
+diff --git a/devices/src/usb/backend/uvc_backend/mod.rs b/devices/src/usb/backend/uvc_backend/mod.rs
+new file mode 100644
+index 0000000..8f802d1
+--- /dev/null
++++ b/devices/src/usb/backend/uvc_backend/mod.rs
+@@ -0,0 +1,11 @@
++// Copyright 2026 The crosvm Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++pub mod camera;
++pub mod descriptors;
++pub mod jpeg;
++#[allow(dead_code)]
++pub mod mediacodec;
++pub mod transfer;
++pub mod uvc_device;
+diff --git a/devices/src/usb/backend/uvc_backend/test_pattern.jpg b/devices/src/usb/backend/uvc_backend/test_pattern.jpg
+new file mode 100644
+index 0000000000000000000000000000000000000000..7ee875a885a50220cb357c9999fe406bb83e2558
+GIT binary patch
+literal 33267
+zcmeIwIZPB$9DwmR*UrrD5*S!;A&aof;({SWmQ}!L44^1<;B5!qcHn`Um<Zl<cxxrz
+z+M(iAiQ?Je3D}6YR^W|=>ns>etklNl`%m69^D=qg%rDv#eIgR7Dk>|4Bnctemxw+V
+z<-%|{bcbf>x^9|=)9s0KyIk(n#H4sndRoTl^faF@GngOB4CH0`d^ttAdE*Kqkw`|U
+zWO8wMQhs419D9jmnx@<3_Qu6|!+xJX{MQq`A}m8K);B6rK**M)SW>i0WZ37_q~Q@i
+zMv@g(bLfWYblDp^5`-)%imWP{rmFVt4fb=PT3VvNpwy96U8@J`J>jO-HY2O7y)(I{
+zdmva?*U)S_Q$~4H)3V2ea&pH;#!o0JE}2+9by~&r8I@HtXU(27ci#L33l}Y3vUJ(<
+z6)RV*UemaC-TF<Nw`|?EeMigAUAy<}-M9b1!NW(69y@;G<f+qV&YtTyf8pY#%U7>;
+zUB7Yj*6llY@7;g!@KH~1U;oo*&tJTJ_4>`*!FTUJeEjtJ%h1<Ymn4*tEc-qZ_FI=_
+zcgd=%sCukRk{j)%SgPhPa3q#i>$UYsfpC-IDQj(O?=-UtYX*|*8oHe+!AO7hU@UF8
+z?9alQ|EcU}*srcW;Z`L3=P8z$B8I-T<Q$S&d;<(%00S7n00uCC0SsUO0~o*n1~7mD
+z3}65Q7{CAqFn|FJU;qOczyJm?fB_6(00S7n00uCC0SsUO0~o*n1~7mD3}65Q7{CAq
+zFn|FJU;qOczyJm?fB_6(00S7n00uCC0SsUO0~o*n1~7mD3}65Q7{CAqFn|FJU;qOc
+zzyJm?fB_6(00S7n00uCC0SsUO0~o*n1~7mD3}65Q7{CAqFn|FJU;qOc_|FF7qrKk&
+DCk7?c
+
+literal 0
+HcmV?d00001
+
+diff --git a/devices/src/usb/backend/uvc_backend/transfer.rs b/devices/src/usb/backend/uvc_backend/transfer.rs
+new file mode 100644
+index 0000000..20e59e4
+--- /dev/null
++++ b/devices/src/usb/backend/uvc_backend/transfer.rs
+@@ -0,0 +1,105 @@
++// Copyright 2026 The crosvm Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++use std::sync::Weak;
++
++use base::error;
++use sync::Mutex;
++use usb_util::TransferBuffer;
++use usb_util::TransferStatus;
++
++use crate::usb::backend::error::Error as BackendError;
++use crate::usb::backend::error::Result as BackendResult;
++use crate::usb::backend::transfer::BackendTransfer;
++use crate::usb::backend::transfer::BackendTransferType;
++use crate::usb::backend::transfer::GenericTransferHandle;
++
++/// Implementation of a generic USB transfer for the UVC backend. The transfer
++/// never reaches usbdevfs, so it carries its own buffer, status and completion
++/// callback.
++pub struct UvcTransfer {
++    /// Buffer holding the control setup followed by its data, or the payload of
++    /// a bulk transfer.
++    pub buffer: TransferBuffer,
++    /// Status of the transfer, reported to the xhci layer on completion.
++    status: TransferStatus,
++    /// Amount of data actually moved by this transfer.
++    pub actual_length: usize,
++    /// USB endpoint associated with this transfer.
++    pub endpoint: u8,
++    /// Callback executed once the transfer completes.
++    pub callback: Option<Box<dyn Fn(UvcTransfer) + Send + Sync>>,
++}
++
++impl UvcTransfer {
++    pub fn new(endpoint: u8, buffer: TransferBuffer) -> UvcTransfer {
++        UvcTransfer {
++            buffer,
++            status: TransferStatus::Completed,
++            actual_length: 0,
++            endpoint,
++            callback: None,
++        }
++    }
++
++    /// Overrides the status the transfer completes with.
++    pub fn set_status(&mut self, status: TransferStatus) {
++        self.status = status;
++    }
++
++    /// Finalizes the transfer and hands it to the xhci completion callback.
++    pub fn complete_transfer(mut self) {
++        if let Some(cb) = self.callback.take() {
++            cb(self);
++        }
++    }
++}
++
++impl BackendTransfer for UvcTransfer {
++    fn status(&self) -> TransferStatus {
++        self.status
++    }
++
++    fn actual_length(&self) -> usize {
++        self.actual_length
++    }
++
++    fn buffer(&self) -> &TransferBuffer {
++        &self.buffer
++    }
++
++    fn set_callback<C: 'static + Fn(BackendTransferType) + Send + Sync>(&mut self, cb: C) {
++        let callback = move |t: UvcTransfer| cb(BackendTransferType::UvcDevice(t));
++        self.callback = Some(Box::new(callback));
++    }
++}
++
++/// Implementation of a cancel handler for `UvcTransfer`.
++pub struct UvcTransferHandle {
++    pub weak_transfer: Weak<Mutex<Option<UvcTransfer>>>,
++}
++
++impl GenericTransferHandle for UvcTransferHandle {
++    fn cancel(&self) -> BackendResult<()> {
++        let rc_transfer = match self.weak_transfer.upgrade() {
++            None => {
++                return Err(BackendError::TransferHandleAlreadyComplete);
++            }
++            Some(rc_transfer) => rc_transfer,
++        };
++
++        let mut lock = rc_transfer.lock();
++
++        let mut transfer = match lock.take() {
++            Some(t) => t,
++            None => {
++                error!("uvc: transfer has already been lost while being cancelled");
++                return Err(BackendError::TransferHandleAlreadyComplete);
++            }
++        };
++        transfer.set_status(TransferStatus::Cancelled);
++        *lock = Some(transfer);
++        Ok(())
++    }
++}
+diff --git a/devices/src/usb/backend/uvc_backend/uvc_device.rs b/devices/src/usb/backend/uvc_backend/uvc_device.rs
+new file mode 100644
+index 0000000..74c675d
+--- /dev/null
++++ b/devices/src/usb/backend/uvc_backend/uvc_device.rs
+@@ -0,0 +1,869 @@
++// Copyright 2026 The crosvm Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++//! A virtual USB Video Class camera backend.
++//!
++//! The device enumerates as a UVC 1.1 MJPEG camera and streams a still JPEG
++//! test pattern as fast as the guest asks for it. It is meant to give a Windows
++//! guest a driver free webcam without passing through a host camera.
++
++use std::cmp;
++use std::sync::Arc;
++use std::sync::RwLock;
++
++use base::error;
++use base::info;
++use base::AsRawDescriptor;
++use base::RawDescriptor;
++use sync::Mutex;
++use usb_util::parse_usbfs_descriptors;
++use usb_util::ConfigDescriptorTree;
++use usb_util::ControlRequestDataPhaseTransferDirection;
++use usb_util::ControlRequestType;
++use usb_util::DeviceDescriptorTree;
++use usb_util::DeviceSpeed;
++use usb_util::EndpointDirection;
++use usb_util::EndpointType;
++use usb_util::Error as UsbUtilError;
++use usb_util::StandardControlRequest;
++use usb_util::TransferBuffer;
++use usb_util::TransferStatus;
++use usb_util::UsbRequestSetup;
++use zerocopy::FromBytes;
++use zerocopy::IntoBytes;
++
++use crate::usb::backend::device::BackendDevice;
++use crate::usb::backend::device::BackendDeviceType;
++use crate::usb::backend::device::DeviceState;
++use crate::usb::backend::endpoint::ControlEndpointState;
++use crate::usb::backend::endpoint::UsbEndpoint;
++use crate::usb::backend::error::Error as BackendError;
++use crate::usb::backend::error::Result as BackendResult;
++use crate::usb::backend::transfer::BackendTransferHandle;
++use crate::usb::backend::transfer::BackendTransferType;
++use crate::usb::backend::transfer::ControlTransferState;
++use crate::usb::backend::uvc_backend::camera;
++use crate::usb::backend::uvc_backend::descriptors;
++use crate::usb::backend::uvc_backend::transfer::UvcTransfer;
++use crate::usb::backend::uvc_backend::transfer::UvcTransferHandle;
++use crate::usb::xhci::xhci_backend_device::BackendType;
++use crate::usb::xhci::xhci_backend_device::UsbDeviceAddress;
++use crate::usb::xhci::xhci_backend_device::XhciBackendDevice;
++use crate::utils::AsyncJobQueue;
++use crate::utils::EventLoop;
++
++/// Number of header bytes prepended to every video payload transfer: a UVC
++/// payload header with a two byte header length and no presentation time.
++const PAYLOAD_HEADER_LEN: usize = 2;
++
++/// State of the video stream, shared between queued transfer jobs.
++struct StreamState {
++    /// Probe/commit structure most recently negotiated with the guest.
++    probe: [u8; descriptors::PROBE_LEN],
++    /// Whether the guest committed the negotiated parameters, i.e. whether it
++    /// expects payload on the bulk endpoint.
++    committed: bool,
++    /// Alternate setting selected on the video streaming interface.
++    alt_setting: u8,
++    /// Frame currently being sent.
++    frame: Vec<u8>,
++    /// Offset of the next payload byte inside `frame`.
++    offset: usize,
++    /// Frame id bit, toggled for every new frame.
++    fid: u8,
++    /// Number of payload transfers handled so far, used for logging.
++    transfers: u64,
++    /// Number of status endpoint transfers handled so far, used for logging.
++    status_transfers: u64,
++    /// Frames fully handed to the guest, used to measure the delivered rate.
++    frames_sent: u64,
++    /// Sequence number of the camera frame being sent, used to avoid sending the
++    /// same picture again while the capture loop has nothing newer.
++    frame_seq: u64,
++    /// Whether the static test picture still has to be sent once, so that the
++    /// guest has something to show while the camera is being opened.
++    test_pattern_pending: bool,
++}
++
++impl StreamState {
++    fn new() -> StreamState {
++        StreamState {
++            probe: descriptors::default_probe(),
++            committed: false,
++            alt_setting: 0,
++            frame: descriptors::TEST_PATTERN.to_vec(),
++            // Start at the end so that the first transfer starts a new frame.
++            offset: descriptors::TEST_PATTERN.len(),
++            fid: 0,
++            transfers: 0,
++            status_transfers: 0,
++            frames_sent: 0,
++            frame_seq: 0,
++            test_pattern_pending: true,
++        }
++    }
++
++    /// Rewinds the stream to the start of a frame.
++    fn restart(&mut self) {
++        self.offset = self.frame.len();
++        self.fid = 0;
++        self.test_pattern_pending = true;
++        self.frame_seq = 0;
++    }
++}
++
++/// Reply of a control request.
++enum Reply {
++    /// A data stage carrying these bytes, truncated to the requested length.
++    Data(Vec<u8>),
++    /// A status only reply, for requests whose data stage came from the guest.
++    Ack,
++    /// The request is not supported, stall the endpoint.
++    Stall,
++}
++
++/// The virtual USB camera.
++pub struct UvcDevice {
++    state: Arc<RwLock<DeviceState>>,
++    control_transfer_state: Arc<RwLock<ControlTransferState>>,
++    transfer_job_queue: Arc<AsyncJobQueue>,
++    stream: Arc<Mutex<StreamState>>,
++    /// Which of the VM's cameras this device streams.
++    camera_slot: usize,
++}
++
++impl UvcDevice {
++    pub fn new(
++        state: DeviceState,
++        event_loop: Arc<EventLoop>,
++        camera_slot: usize,
++        camera_id: String,
++    ) -> BackendResult<UvcDevice> {
++        let control_transfer_state = ControlTransferState {
++            ctl_ep_state: ControlEndpointState::SetupStage,
++            control_request_setup: UsbRequestSetup::new(0, 0, 0, 0, 0),
++            executed: false,
++        };
++        let job_queue = AsyncJobQueue::init(&event_loop).map_err(BackendError::StartAsyncJobQueue)?;
++        let device = UvcDevice {
++            state: Arc::new(RwLock::new(state)),
++            control_transfer_state: Arc::new(RwLock::new(control_transfer_state)),
++            transfer_job_queue: job_queue,
++            stream: Arc::new(Mutex::new(StreamState::new())),
++            camera_slot,
++        };
++        info!(
++            "uvc: camera {camera_slot} (host camera {camera_id}) created, \
++             config descriptor {} bytes, frame {} bytes",
++            descriptors::config_descriptor().len(),
++            descriptors::TEST_PATTERN.len()
++        );
++        camera::spawn_camera(camera_slot, camera_id);
++        Ok(device)
++    }
++
++    /// Handles a control transfer. The transfer buffer starts with the setup
++    /// packet followed by the data stage sent by the guest, and is replaced by
++    /// the setup packet followed by the response for the guest.
++    fn handle_control(
++        transfer: &mut UvcTransfer,
++        stream: &Arc<Mutex<StreamState>>,
++        camera_slot: usize,
++    ) -> BackendResult<()> {
++        transfer.actual_length = 0;
++        let setup = match &transfer.buffer {
++            TransferBuffer::Vector(v) => match UsbRequestSetup::read_from_prefix(v) {
++                Ok((setup, _)) => setup,
++                Err(_) => return Err(BackendError::MalformedBackendTransfer),
++            },
++            _ => return Err(BackendError::MalformedBackendTransfer),
++        };
++
++        let length = setup.length as usize;
++        let is_device_to_host =
++            setup.get_direction() == ControlRequestDataPhaseTransferDirection::DeviceToHost;
++        // `UsbRequestSetup` is packed, so copy the fields out before formatting them.
++        let request_type = setup.request_type;
++        let request = setup.request;
++        let value = setup.value;
++        let index = setup.index;
++        info!(
++            "uvc: ctl bmRequestType=0x{request_type:02x} bRequest=0x{request:02x} \
++             wValue=0x{value:04x} wIndex=0x{index:04x} wLength={length}"
++        );
++
++        let reply = match setup.get_type() {
++            ControlRequestType::Standard => {
++                if !is_device_to_host {
++                    Reply::Ack
++                } else {
++                    match setup.request {
++                        x if x == StandardControlRequest::GetDescriptor as u8 => {
++                            UvcDevice::handle_get_descriptor(&setup, length, camera_slot)
++                        }
++                        x if x == StandardControlRequest::GetStatus as u8 => {
++                            Reply::Data(vec![0u8; 2])
++                        }
++                        x if x == StandardControlRequest::GetInterface as u8 => {
++                            Reply::Data(vec![stream.lock().alt_setting])
++                        }
++                        x if x == StandardControlRequest::GetConfiguration as u8 => {
++                            Reply::Data(vec![descriptors::CONFIG_VALUE])
++                        }
++                        _ => Reply::Stall,
++                    }
++                }
++            }
++            ControlRequestType::Class => {
++                UvcDevice::handle_class_request(
++                    transfer,
++                    &setup,
++                    length,
++                    is_device_to_host,
++                    stream,
++                    camera_slot,
++                )
++            }
++            _ => Reply::Stall,
++        };
++
++        let data = match reply {
++            Reply::Data(data) => data,
++            Reply::Ack => {
++                transfer.buffer = TransferBuffer::Vector(setup.as_bytes().to_vec());
++                return Ok(());
++            }
++            Reply::Stall => {
++                let request = setup.request;
++                let value = setup.value;
++                let index = setup.index;
++                info!(
++                    "uvc: stalling unsupported control request bRequest=0x{:02x} value=0x{:04x} \
++                     index=0x{:04x}",
++                    request, value, index
++                );
++                transfer.set_status(TransferStatus::Stalled);
++                return Ok(());
++            }
++        };
++
++        let transferred = cmp::min(data.len(), length);
++        let mut response = setup.as_bytes().to_vec();
++        response.extend_from_slice(&data[..transferred]);
++        transfer.actual_length = transferred;
++        transfer.buffer = TransferBuffer::Vector(response);
++        Ok(())
++    }
++
++    /// Handles GET_DESCRIPTOR requests the generic backend layer leaves to the
++    /// device driver: device, string, class specific interface and device
++    /// qualifier descriptors.
++    fn handle_get_descriptor(
++        setup: &UsbRequestSetup,
++        length: usize,
++        camera_slot: usize,
++    ) -> Reply {
++        let descriptor_type = (setup.value >> 8) as u8;
++        let descriptor_index = (setup.value & 0xff) as u8;
++        let interface = (setup.index & 0xff) as u8;
++        match descriptor_type {
++            // DEVICE
++            0x01 => Reply::Data(descriptors::device_descriptor(camera_slot).to_vec()),
++            // CONFIGURATION: normally answered by the generic backend layer.
++            0x02 => {
++                let config = descriptors::config_descriptor();
++                let count = cmp::min(length, config.len());
++                Reply::Data(config[..count].to_vec())
++            }
++            // STRING: only the language id string, the device carries no
++            // strings.
++            0x03 => match descriptor_index {
++                0 => Reply::Data(vec![0x04, 0x03, 0x09, 0x04]),
++                _ => Reply::Stall,
++            },
++            // CS_INTERFACE: the video driver re-reads the class specific
++            // descriptors of its interfaces.
++            0x24 => {
++                let config = descriptors::config_descriptor();
++                let block = descriptors::class_specific_descriptors(&config, interface);
++                if block.is_empty() {
++                    Reply::Stall
++                } else {
++                    let count = cmp::min(length, block.len());
++                    Reply::Data(block[..count].to_vec())
++                }
++            }
++            _ => {
++                let request = setup.request;
++                let value = setup.value;
++                let index = setup.index;
++                info!(
++                    "uvc: stalling unsupported descriptor type 0x{:02x} (bRequest=0x{:02x} \
++                     value=0x{:04x} index=0x{:04x} length={})",
++                    descriptor_type, request, value, index, length
++                );
++                Reply::Stall
++            }
++        }
++    }
++
++    /// Handles UVC class specific requests, which carry the video streaming
++    /// probe and commit negotiation.
++    fn handle_class_request(
++        transfer: &UvcTransfer,
++        setup: &UsbRequestSetup,
++        length: usize,
++        is_device_to_host: bool,
++        stream: &Arc<Mutex<StreamState>>,
++        camera_slot: usize,
++    ) -> Reply {
++        let selector = (setup.value >> 8) as u8;
++        let interface = (setup.index & 0xff) as u8;
++        let entity = (setup.index >> 8) as u8;
++        info!(
++            "uvc: class request bRequest=0x{:02x} selector=0x{:02x} interface={} entity={} \
++             length={}",
++            setup.request, selector, interface, entity, length
++        );
++
++        match (setup.request, selector) {
++            (descriptors::request::GET_LEN, descriptors::selector::PROBE)
++            | (descriptors::request::GET_LEN, descriptors::selector::COMMIT) => {
++                Reply::Data((descriptors::PROBE_LEN as u16).to_le_bytes().to_vec())
++            }
++            (descriptors::request::GET_INFO, descriptors::selector::PROBE) => {
++                // Get and set are supported on the probe control.
++                Reply::Data(vec![0x03])
++            }
++            (descriptors::request::GET_INFO, descriptors::selector::COMMIT) => {
++                // Only set is supported on the commit control.
++                Reply::Data(vec![0x02])
++            }
++            (descriptors::request::GET_CUR, descriptors::selector::PROBE) => {
++                Reply::Data(stream.lock().probe.to_vec())
++            }
++            (descriptors::request::GET_DEF, descriptors::selector::PROBE)
++            | (descriptors::request::GET_MIN, descriptors::selector::PROBE)
++            | (descriptors::request::GET_MAX, descriptors::selector::PROBE)
++            | (descriptors::request::GET_RES, descriptors::selector::PROBE) => {
++                Reply::Data(descriptors::default_probe().to_vec())
++            }
++            (descriptors::request::SET_CUR, descriptors::selector::PROBE) => {
++                UvcDevice::set_probe(transfer, length, is_device_to_host, stream);
++                Reply::Ack
++            }
++            (descriptors::request::SET_CUR, descriptors::selector::COMMIT) => {
++                // A commit that announces neither a frame size nor a payload is how
++                // the host turns streaming off again; everything else starts one.
++                let sizes = UvcDevice::commit_sizes(transfer, length, is_device_to_host);
++                let streaming =
++                    matches!(sizes, Some((frame, payload)) if frame != 0 && payload != 0);
++                camera::set_streaming(camera_slot, streaming);
++                let mut stream = stream.lock();
++                stream.committed = streaming;
++                stream.restart();
++                info!(
++                    "uvc: streaming committed={} interval={} max frame={} max payload={}",
++                    streaming,
++                    u32::from_le_bytes(stream.probe[4..8].try_into().unwrap_or([0; 4])),
++                    u32::from_le_bytes(stream.probe[18..22].try_into().unwrap_or([0; 4])),
++                    u32::from_le_bytes(stream.probe[22..26].try_into().unwrap_or([0; 4])),
++                );
++                Reply::Ack
++            }
++            _ => Reply::Stall,
++        }
++    }
++
++    /// Returns the frame and payload sizes announced by a commit control write.
++    fn commit_sizes(
++        transfer: &UvcTransfer,
++        length: usize,
++        is_device_to_host: bool,
++    ) -> Option<(u32, u32)> {
++        if is_device_to_host {
++            return None;
++        }
++        let payload = match &transfer.buffer {
++            TransferBuffer::Vector(v) => {
++                let end = cmp::min(8 + length, v.len());
++                v.get(8..end)?
++            }
++            _ => return None,
++        };
++        if payload.len() < 26 {
++            return None;
++        }
++        Some((
++            u32::from_le_bytes(payload[18..22].try_into().ok()?),
++            u32::from_le_bytes(payload[22..26].try_into().ok()?),
++        ))
++    }
++
++    /// Stores the probe structure sent by the guest, clamped to what this
++    /// camera can actually deliver.
++    fn set_probe(
++        transfer: &UvcTransfer,
++        length: usize,
++        is_device_to_host: bool,
++        stream: &Arc<Mutex<StreamState>>,
++    ) {
++        if is_device_to_host {
++            return;
++        }
++        let payload = match &transfer.buffer {
++            TransferBuffer::Vector(v) => {
++                let end = cmp::min(8 + length, v.len());
++                v.get(8..end).unwrap_or(&[])
++            }
++            _ => return,
++        };
++
++        let mut stream = stream.lock();
++        let mut probe = stream.probe;
++        let copied = cmp::min(payload.len(), probe.len());
++        probe[..copied].copy_from_slice(&payload[..copied]);
++
++        let requested = (
++            probe[2],
++            probe[3],
++            u32::from_le_bytes(probe[4..8].try_into().unwrap_or([0; 4])),
++            u32::from_le_bytes(probe[18..22].try_into().unwrap_or([0; 4])),
++            u32::from_le_bytes(probe[22..26].try_into().unwrap_or([0; 4])),
++            probe[30],
++        );
++        // Clamp the negotiated values to the one format and frame this device
++        // implements. The buffer sizes are echoed back so that the negotiated
++        // payload size never grows above what the host proposed: usbvideo.sys
++        // rejects a probe whose dwMaxPayloadTransferSize it did not ask for.
++        // Echo the frame the host picked, clamped to the three sizes we
++        // advertise, and only the two intervals we implement.
++        let frame_index = if (1..=descriptors::FRAMES.len() as u8).contains(&requested.1) {
++            requested.1
++        } else {
++            descriptors::FRAMES.len() as u8
++        };
++        let (frame_width, frame_height) = descriptors::FRAMES[frame_index as usize - 1];
++        let interval = if requested.2 == descriptors::FRAME_INTERVAL_30 {
++            descriptors::FRAME_INTERVAL_30
++        } else {
++            descriptors::FRAME_INTERVAL_60
++        };
++        probe[2] = 1; // bFormatIndex
++        probe[3] = frame_index;
++        probe[4..8].copy_from_slice(&interval.to_le_bytes());
++        probe[8..18].fill(0); // key frame rate, p frame rate, quality, window, delay
++        probe[18..22].copy_from_slice(&(frame_width as u32 * frame_height as u32 * 2).to_le_bytes());
++        // A bulk endpoint carries one packet worth of payload per transfer, so
++        // the negotiated payload size must stay within wMaxPacketSize no matter
++        // what the host asked for.
++        probe[22..26].copy_from_slice(&descriptors::MAX_PAYLOAD_TRANSFER_SIZE.to_le_bytes());
++        probe[26..30].fill(0); // dwClockFrequency
++        probe[30] = 0; // bmFramingInfo
++        probe[31] = 0x10; // bPreferredVersion
++        probe[32] = 0x10; // bMinVersion
++        probe[33] = 0x10; // bMaxVersion
++        stream.probe = probe;
++        stream.restart();
++        info!(
++            "uvc: probe request format={} frame={} interval={} max frame={} max payload={} \
++             framing={:#04x}, stored interval={} max frame={} max payload={}",
++            requested.0,
++            requested.1,
++            requested.2,
++            requested.3,
++            requested.4,
++            requested.5,
++            u32::from_le_bytes(probe[4..8].try_into().unwrap_or([0; 4])),
++            u32::from_le_bytes(probe[18..22].try_into().unwrap_or([0; 4])),
++            u32::from_le_bytes(probe[22..26].try_into().unwrap_or([0; 4])),
++        );
++    }
++
++    /// Fills a bulk IN transfer with the next chunk of the current frame.
++    fn handle_bulk_in(
++        transfer: &mut UvcTransfer,
++        stream: &Arc<Mutex<StreamState>>,
++        camera_slot: usize,
++    ) -> BackendResult<()> {
++        transfer.actual_length = 0;
++        let buffer_len = match &transfer.buffer {
++            TransferBuffer::Vector(v) => v.len(),
++            _ => return Err(BackendError::MalformedBackendTransfer),
++        };
++        if buffer_len <= PAYLOAD_HEADER_LEN {
++            return Ok(());
++        }
++
++        camera::touch_activity(camera_slot);
++        let mut stream = stream.lock();
++        if !stream.committed {
++            // The guest has not committed a stream yet: answer with a short
++            // packet so that it keeps polling instead of hanging.
++            return Ok(());
++        }
++
++        if stream.offset >= stream.frame.len() {
++            // A new frame is due. Only start one when the capture loop produced a
++            // picture we have not sent yet: handing out the same frame as fast as
++            // the host asks would flood the bus with copies and starve the real
++            // frames. Without a new picture the transfer completes empty, which
++            // makes the host wait instead of spinning.
++            match camera::take_latest_frame(camera_slot) {
++                Some((seq, live)) if seq != stream.frame_seq => {
++                    stream.frame = live;
++                    stream.frame_seq = seq;
++                    stream.offset = 0;
++                    stream.fid ^= 1;
++                }
++                _ if stream.test_pattern_pending => {
++                    // Show the static picture once while the camera opens.
++                    stream.frame = descriptors::TEST_PATTERN.to_vec();
++                    stream.test_pattern_pending = false;
++                    stream.offset = 0;
++                    stream.fid ^= 1;
++                }
++                _ => return Ok(()),
++            }
++        }
++
++        let frame_len = stream.frame.len();
++        let payload_len = cmp::min(frame_len - stream.offset, buffer_len - PAYLOAD_HEADER_LEN);
++        let end_of_frame = stream.offset + payload_len == frame_len;
++        let mut header_info = stream.fid & 0x01;
++        if end_of_frame {
++            header_info |= 0x02;
++        }
++
++        if let TransferBuffer::Vector(v) = &mut transfer.buffer {
++            v[0] = PAYLOAD_HEADER_LEN as u8;
++            v[1] = header_info;
++            v[PAYLOAD_HEADER_LEN..PAYLOAD_HEADER_LEN + payload_len]
++                .copy_from_slice(&stream.frame[stream.offset..stream.offset + payload_len]);
++        }
++        stream.offset += payload_len;
++        if end_of_frame {
++            stream.frames_sent += 1;
++            if stream.frames_sent % 60 == 0 {
++                info!(
++                    "uvc: delivered {} frames, last frame {} bytes",
++                    stream.frames_sent, frame_len
++                );
++            }
++        }
++        transfer.actual_length = PAYLOAD_HEADER_LEN + payload_len;
++        stream.transfers += 1;
++        if stream.transfers <= 8 || stream.transfers % 5000 == 0 {
++            info!(
++                "uvc: bulk transfer #{} buffer={} actual={} offset={} fid={} eof={}",
++                stream.transfers,
++                buffer_len,
++                transfer.actual_length,
++                stream.offset,
++                stream.fid,
++                end_of_frame
++            );
++        }
++        Ok(())
++    }
++
++    /// Completes a status interrupt IN transfer with a short packet: the camera
++    /// has no asynchronous events to report.
++    fn handle_status_in(
++        transfer: &mut UvcTransfer,
++        stream: &Arc<Mutex<StreamState>>,
++    ) -> BackendResult<()> {
++        transfer.actual_length = 0;
++        let buffer_len = match &transfer.buffer {
++            TransferBuffer::Vector(v) => v.len(),
++            _ => 0,
++        };
++        let mut stream = stream.lock();
++        stream.status_transfers += 1;
++        if stream.status_transfers <= 4 || stream.status_transfers % 500 == 0 {
++            info!(
++                "uvc: status transfer #{} buffer={}",
++                stream.status_transfers, buffer_len
++            );
++        }
++        Ok(())
++    }
++
++    /// Records the alternate setting the guest selected on a video interface.
++    /// Selecting alt setting 1 on the streaming interface starts the stream.
++    pub fn set_interface(&mut self, interface: u8, alt: u8) -> BackendResult<TransferStatus> {
++        if interface != descriptors::STREAM_INTERFACE {
++            return Ok(TransferStatus::Completed);
++        }
++        info!("uvc: streaming interface alternate setting {alt}");
++        // Alternate setting 0 means the host stopped the stream; anything else
++        // starts it. The commit control is the authoritative signal, but this
++        // keeps the camera closed when the host switches away without one.
++        if alt == 0 {
++            camera::set_streaming(self.camera_slot, false);
++        }
++        let mut stream = self.stream.lock();
++        stream.alt_setting = alt;
++        stream.committed = alt != 0;
++        stream.restart();
++        Ok(TransferStatus::Completed)
++    }
++
++    /// Drops any stream the guest may be running.
++    fn stop_stream(&self) {
++        camera::set_streaming(self.camera_slot, false);
++        let mut stream = self.stream.lock();
++        stream.committed = false;
++        stream.restart();
++    }
++}
++
++impl AsRawDescriptor for UvcDevice {
++    fn as_raw_descriptor(&self) -> RawDescriptor {
++        // The camera has no host file descriptor to wait on.
++        -1
++    }
++}
++
++impl BackendDevice for UvcDevice {
++    fn submit_backend_transfer(
++        &mut self,
++        transfer: BackendTransferType,
++    ) -> BackendResult<BackendTransferHandle> {
++        let transfer = match transfer {
++            BackendTransferType::UvcDevice(transfer) => transfer,
++            _ => return Err(BackendError::MalformedBackendTransfer),
++        };
++
++        let endpoint = transfer.endpoint;
++        let stream = self.stream.clone();
++        let camera_slot = self.camera_slot;
++        let arc_transfer = Arc::new(Mutex::new(Some(transfer)));
++        let cancel_handle = UvcTransferHandle {
++            weak_transfer: Arc::downgrade(&arc_transfer),
++        };
++
++        self.transfer_job_queue
++            .queue_job(move || {
++                let mut lock = arc_transfer.lock();
++                let mut transfer = match lock.take() {
++                    Some(transfer) => transfer,
++                    None => {
++                        error!("uvc: transfer disappeared before it could be handled");
++                        return;
++                    }
++                };
++                drop(lock);
++
++                let result = if endpoint == 0 {
++                    UvcDevice::handle_control(&mut transfer, &stream, camera_slot)
++                } else if endpoint == descriptors::STATUS_ENDPOINT {
++                    UvcDevice::handle_status_in(&mut transfer, &stream)
++                } else {
++                    UvcDevice::handle_bulk_in(&mut transfer, &stream, camera_slot)
++                };
++                if let Err(e) = result {
++                    error!("uvc: endpoint {endpoint} transfer failed: {e:#}");
++                    transfer.set_status(TransferStatus::Error);
++                }
++                transfer.complete_transfer();
++            })
++            .map_err(BackendError::QueueAsyncJob)?;
++
++        Ok(BackendTransferHandle::new(cancel_handle))
++    }
++
++    fn detach_event_handler(&self, _event_loop: &Arc<EventLoop>) -> BackendResult<()> {
++        self.stop_stream();
++        Ok(())
++    }
++
++    fn request_transfer_buffer(&mut self, size: usize) -> TransferBuffer {
++        TransferBuffer::Vector(vec![0u8; size])
++    }
++
++    fn build_bulk_transfer(
++        &mut self,
++        ep_addr: u8,
++        transfer_buffer: TransferBuffer,
++        _stream_id: Option<u16>,
++    ) -> BackendResult<BackendTransferType> {
++        let buffer_len = match &transfer_buffer {
++            TransferBuffer::Vector(v) => v.len(),
++            _ => 0,
++        };
++        // Only the first few submits are worth logging: one frame is split into
++        // dozens of bulk transfers, and logging each of them slows the stream.
++        static BUILD_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
++        let build_count = BUILD_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
++        if build_count < 4 || build_count % 2000 == 0 {
++            info!("uvc: build bulk transfer #{build_count} ep=0x{ep_addr:02x} buffer={buffer_len}");
++        }
++        Ok(BackendTransferType::UvcDevice(UvcTransfer::new(
++            ep_addr,
++            transfer_buffer,
++        )))
++    }
++
++    fn build_interrupt_transfer(
++        &mut self,
++        ep_addr: u8,
++        transfer_buffer: TransferBuffer,
++    ) -> BackendResult<BackendTransferType> {
++        Ok(BackendTransferType::UvcDevice(UvcTransfer::new(
++            ep_addr,
++            transfer_buffer,
++        )))
++    }
++
++    fn build_isochronous_transfer(
++        &mut self,
++        _ep_addr: u8,
++        _transfer_buffer: TransferBuffer,
++        _packet_lengths: &[u32],
++    ) -> BackendResult<BackendTransferType> {
++        Err(BackendError::MalformedBackendTransfer)
++    }
++
++    fn get_control_transfer_state(&mut self) -> Arc<RwLock<ControlTransferState>> {
++        self.control_transfer_state.clone()
++    }
++
++    fn get_device_state(&mut self) -> Arc<RwLock<DeviceState>> {
++        self.state.clone()
++    }
++
++    fn get_active_config_descriptor(&mut self) -> BackendResult<ConfigDescriptorTree> {
++        self.get_config_descriptor_by_index(0)
++    }
++
++    fn get_config_descriptor(&mut self, config: u8) -> BackendResult<ConfigDescriptorTree> {
++        let device_descriptor = self.get_device_descriptor_tree()?;
++        if let Some(config_descriptor) = device_descriptor.get_config_descriptor(config) {
++            return Ok(config_descriptor.clone());
++        }
++        Err(BackendError::GetConfigDescriptor(
++            UsbUtilError::DescriptorParse,
++        ))
++    }
++
++    fn get_config_descriptor_by_index(
++        &mut self,
++        config_index: u8,
++    ) -> BackendResult<ConfigDescriptorTree> {
++        let device_descriptor = self.get_device_descriptor_tree()?;
++        if let Some(config_descriptor) =
++            device_descriptor.get_config_descriptor_by_index(config_index)
++        {
++            return Ok(config_descriptor.clone());
++        }
++        Err(BackendError::GetConfigDescriptor(
++            UsbUtilError::DescriptorParse,
++        ))
++    }
++
++    fn get_device_descriptor_tree(&mut self) -> BackendResult<DeviceDescriptorTree> {
++        let mut descbuf = descriptors::device_descriptor(self.camera_slot).to_vec();
++        descbuf.extend_from_slice(&descriptors::config_descriptor());
++        parse_usbfs_descriptors(&descbuf).map_err(BackendError::GetDeviceDescriptor)
++    }
++
++    fn get_active_configuration(&mut self) -> BackendResult<u8> {
++        let descriptor_tree = self.get_device_descriptor_tree()?;
++        if let Some(config_descriptor) = descriptor_tree.get_config_descriptor_by_index(0) {
++            return Ok(config_descriptor.bConfigurationValue);
++        }
++        Err(BackendError::GetActiveConfig(UsbUtilError::DescriptorParse))
++    }
++
++    fn set_active_configuration(&mut self, config: u8) -> BackendResult<()> {
++        if config != 0 && config != descriptors::CONFIG_VALUE {
++            error!("uvc: requested configuration {config}, only the default one exists");
++            return Err(BackendError::BadBackendProviderState);
++        }
++        self.stop_stream();
++        Ok(())
++    }
++
++    fn clear_feature(&mut self, _value: u16, _index: u16) -> BackendResult<TransferStatus> {
++        Ok(TransferStatus::Completed)
++    }
++
++    fn create_endpoints(&mut self, _config_descriptor: &ConfigDescriptorTree) -> BackendResult<()> {
++        let device_state = self.get_device_state();
++        let (fail_handle, job_queue) = {
++            let state = device_state.read().unwrap();
++            (state.fail_handle.clone(), state.job_queue.clone())
++        };
++        let mut endpoints = Vec::new();
++        endpoints.push(UsbEndpoint::new(
++            fail_handle.clone(),
++            job_queue.clone(),
++            1,
++            EndpointDirection::DeviceToHost,
++            EndpointType::Bulk,
++        ));
++        endpoints.push(UsbEndpoint::new(
++            fail_handle,
++            job_queue,
++            2,
++            EndpointDirection::DeviceToHost,
++            EndpointType::Interrupt,
++        ));
++        device_state.write().unwrap().endpoints = endpoints;
++        Ok(())
++    }
++}
++
++impl XhciBackendDevice for UvcDevice {
++    fn get_backend_type(&self) -> BackendType {
++        BackendType::Usb2
++    }
++
++    fn get_vid(&self) -> u16 {
++        descriptors::VENDOR_ID
++    }
++
++    fn get_pid(&self) -> u16 {
++        descriptors::PRODUCT_ID
++    }
++
++    fn set_address(&mut self, _address: UsbDeviceAddress) {
++        // The guest address is meaningful to the xhci layer only.
++    }
++
++    fn reset(&mut self) -> BackendResult<()> {
++        self.stop_stream();
++        Ok(())
++    }
++
++    fn get_speed(&self) -> Option<DeviceSpeed> {
++        Some(DeviceSpeed::High)
++    }
++
++    fn alloc_streams(&self, _ep: u8, _num_streams: u16) -> BackendResult<()> {
++        // Bulk endpoints of this camera do not support streams.
++        Ok(())
++    }
++
++    fn free_streams(&self, _ep: u8) -> BackendResult<()> {
++        Ok(())
++    }
++
++    fn stop(&mut self) {
++        self.stop_stream();
++    }
++}
++
++/// Creates the virtual camera and wraps it in the backend device enum, ready to
++/// be connected to the xhci hub.
++pub fn attach_virtual_camera(
++    device_state: DeviceState,
++    event_loop: Arc<EventLoop>,
++    camera_slot: usize,
++    camera_id: String,
++) -> BackendResult<Arc<Mutex<BackendDeviceType>>> {
++    let device = UvcDevice::new(device_state, event_loop, camera_slot, camera_id)?;
++    Ok(Arc::new(Mutex::new(BackendDeviceType::UvcDevice(device))))
++}
+diff --git a/src/crosvm/cmdline.rs b/src/crosvm/cmdline.rs
+index a3fcc72..6348a60 100644
+--- a/src/crosvm/cmdline.rs
++++ b/src/crosvm/cmdline.rs
+@@ -2664,6 +2664,13 @@ pub struct RunCommand {
+     /// path to a V4L2 device to expose to the guest using the virtio-media protocol.
+     pub v4l2_proxy: Vec<PathBuf>,
+ 
++    #[cfg(all(target_os = "android", feature = "usb"))]
++    #[argh(option, arg_name = "ID")]
++    #[serde(default)]
++    #[merge(strategy = append)]
++    /// attach an emulated USB camera for the selected Android camera ID
++    pub uvc_camera: Vec<String>,
++
+     #[argh(option, arg_name = "PATH")]
+     #[serde(skip)] // TODO(b/255223604)
+     #[merge(strategy = overwrite_option)]
+@@ -4228,6 +4235,9 @@ impl TryFrom<RunCommand> for super::config::Config {
+             cfg.simple_media_device = cmd.simple_media_device.unwrap_or_default();
+         }
+ 
++        #[cfg(all(target_os = "android", feature = "usb"))]
++        devices::DeviceProvider::set_uvc_cameras(cmd.uvc_camera);
++
+         #[cfg(all(unix, feature = "media"))]
+         {
+             cfg.virtio_media = cmd.virtio_media;

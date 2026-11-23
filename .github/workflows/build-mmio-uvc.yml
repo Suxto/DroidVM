@@ -1,0 +1,58 @@
+name: Build MMIO crosvm with UVC
+
+on:
+  push:
+    branches: [feat/standard-touchpad-capture-dev]
+    paths:
+      - .github/workflows/build-mmio-uvc.yml
+      - scripts/crosvm/mmio-uvc.patch
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sync Android build dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y repo
+          mkdir -p "$RUNNER_TEMP/aosp"
+          cd "$RUNNER_TEMP/aosp"
+          repo init -u https://github.com/Droid-VM/crosvm-minimal-manifest.git \
+            -b droidvm -m crosvm-minimal.xml --depth=1 --no-clone-bundle
+          mkdir -p .repo/local_manifests
+          cat > .repo/local_manifests/mmio.xml <<'EOF'
+          <manifest>
+            <extend-project name="crosvm" path="external/crosvm" revision="da647254c2a9c6458ac2f5e0d15fb4c33c6333a8" upstream="refs/heads/wip/virtio-mmio"/>
+            <remove-project name="platform/external/virtio-media"/>
+            <project name="virtio-media" path="external/virtio-media" remote="droidvm" revision="3fe8fb594f5761c4d70d0f05781af23f42b47698" upstream="refs/heads/wip/hackintosh"/>
+          </manifest>
+          EOF
+          repo sync -c -j8 --no-tags --fail-fast
+      - name: Build Android ARM64 runtime
+        run: |
+          cd "$RUNNER_TEMP/aosp"
+          git -C external/crosvm apply --check "$GITHUB_WORKSPACE/scripts/crosvm/mmio-uvc.patch"
+          git -C external/crosvm apply "$GITHUB_WORKSPACE/scripts/crosvm/mmio-uvc.patch"
+          source build/envsetup.sh
+          lunch aosp_arm64-trunk_staging-userdebug
+          m -j4 crosvm_device_only
+          dir=out/soong/.intermediates/external/crosvm/crosvm_device_only/crosvm_device_only_bin
+          runtime="$(find "$dir" -path '*/android_arm64*/crosvm' -type f | head -n1)"
+          test -n "$runtime"
+          product="$RUNNER_TEMP/mmio-uvc"
+          mkdir -p "$product"
+          cp "$runtime" "$product/crosvm"
+          LC_ALL=C grep -aq -- 'uvc-camera' "$product/crosvm"
+          file "$product/crosvm"
+          (cd "$product" && sha256sum crosvm > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crosvm-mmio-uvc-arm64
+          path: ${{ runner.temp }}/mmio-uvc
+          if-no-files-found: error
