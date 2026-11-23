@@ -14,7 +14,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - name: Sync Android build dependencies
@@ -58,7 +58,9 @@ jobs:
           PY
           source build/envsetup.sh
           lunch aosp_arm64-trunk_staging-userdebug
-          m -j4 crosvm_device_only
+          free -h
+          df -h .
+          m -j2 crosvm_device_only
           dir=out/soong/.intermediates/external/crosvm/crosvm_device_only/crosvm_device_only_bin
           runtime="$(find "$dir" -path '*/android_arm64*/crosvm' -type f | head -n1)"
           test -n "$runtime"
