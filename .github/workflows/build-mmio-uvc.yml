@@ -42,18 +42,29 @@ jobs:
           cd "$RUNNER_TEMP/aosp"
           git -C external/crosvm apply --check "$GITHUB_WORKSPACE/scripts/crosvm/mmio-uvc.patch"
           git -C external/crosvm apply "$GITHUB_WORKSPACE/scripts/crosvm/mmio-uvc.patch"
-          # Permit only crosvm's libdatachannel package to link BoringSSL's static target.
+          # Soong checks both the standalone build and the com.android.virt variants.
           python3 - <<'PY'
           import re
           from pathlib import Path
 
           build_file = Path("external/boringssl/Android.bp")
           blueprint = build_file.read_text()
-          marker = r'(name:\s*"libcrypto_static",\s*visibility:\s*\[)'
-          visibility = '\n        "//external/crosvm/third_party/libdatachannel",'
-          blueprint, count = re.subn(marker, lambda match: match[1] + visibility, blueprint)
+          def allow_crosvm(match):
+              module = match[0]
+              for prop, value in (
+                  ("visibility", "//external/crosvm/third_party/libdatachannel"),
+                  ("apex_available", "com.android.virt"),
+              ):
+                  marker = f"    {prop}: [\n"
+                  if module.count(marker) != 1:
+                      raise SystemExit(f"Failed to locate libcrypto_static {prop} in BoringSSL")
+                  module = module.replace(marker, marker + f'        "{value}",\n', 1)
+              return module
+
+          marker = r'^cc_library_static \{\n    name: "libcrypto_static",\n.*?^\}'
+          blueprint, count = re.subn(marker, allow_crosvm, blueprint, flags=re.M | re.S)
           if count != 1:
-              raise SystemExit("Failed to locate libcrypto_static visibility in BoringSSL")
+              raise SystemExit("Failed to locate libcrypto_static in BoringSSL")
           build_file.write_text(blueprint)
           PY
           source build/envsetup.sh
