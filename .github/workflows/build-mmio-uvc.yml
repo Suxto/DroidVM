@@ -38,6 +38,8 @@ jobs:
         env:
           # The minimal manifest omits modules outside the runtime's dependency tree.
           ALLOW_MISSING_DEPENDENCIES: 'true'
+          # This job ships a native executable and does not build Android framework boot jars.
+          UNSAFE_DISABLE_HIDDENAPI_FLAGS: 'true'
         run: |
           cd "$RUNNER_TEMP/aosp"
           git -C external/crosvm apply --check "$GITHUB_WORKSPACE/scripts/crosvm/mmio-uvc.patch"
