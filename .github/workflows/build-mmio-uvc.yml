@@ -79,6 +79,21 @@ jobs:
           source = source.replace(marker, marker + '\n\tinvocationEnv["GOMEMLIMIT"] = "7GiB"'
                                   + '\n\tinvocationEnv["GOMAXPROCS"] = "2"')
           soong.write_text(source)
+
+          # The MMIO branch's virtio-media uses the conversion from newer v4l2r.
+          controls = Path("external/rust/crates/v4l2r/lib/src/ioctl/queryctrl.rs")
+          source = controls.read_text()
+          marker = 'pub struct CtrlId(u32);'
+          if source.count(marker) != 1:
+              raise SystemExit("Failed to locate v4l2r CtrlId")
+          conversion = '''
+
+          impl From<CtrlId> for u32 {
+              fn from(id: CtrlId) -> Self {
+                  id.0
+              }
+          }'''
+          controls.write_text(source.replace(marker, marker + conversion, 1))
           PY
           source build/envsetup.sh
           lunch aosp_arm64-trunk_staging-userdebug
