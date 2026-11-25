@@ -40,6 +40,7 @@ jobs:
           ALLOW_MISSING_DEPENDENCIES: 'true'
           # This job ships a native executable and does not build Android framework boot jars.
           UNSAFE_DISABLE_HIDDENAPI_FLAGS: 'true'
+          SOONG_UNBUFFERED_OUTPUT: '1'
         run: |
           cd "$RUNNER_TEMP/aosp"
           git -C external/crosvm apply --check "$GITHUB_WORKSPACE/scripts/crosvm/mmio-uvc.patch"
@@ -68,12 +69,34 @@ jobs:
           if count != 1:
               raise SystemExit("Failed to locate libcrypto_static in BoringSSL")
           build_file.write_text(blueprint)
+
+          # Blueprint runs soong_build with a clean environment, independent of Ninja's -j.
+          soong = Path("build/soong/ui/build/soong.go")
+          source = soong.read_text()
+          marker = 'invocationEnv := make(map[string]string)'
+          if source.count(marker) != 1:
+              raise SystemExit("Failed to locate the Soong builder environment")
+          source = source.replace(marker, marker + '\n\tinvocationEnv["GOMEMLIMIT"] = "7GiB"'
+                                  + '\n\tinvocationEnv["GOMAXPROCS"] = "2"')
+          soong.write_text(source)
           PY
           source build/envsetup.sh
           lunch aosp_arm64-trunk_staging-userdebug
           free -h
           df -h .
+          (
+            while sleep 30; do
+              date -u
+              free -h
+              df -h .
+              ps -C soong_build,ninja,rustc,clang -o comm,rss,%cpu,etime --sort=-rss | head -n 9 || true
+            done
+          ) &
+          monitor=$!
+          trap 'kill "$monitor" 2>/dev/null || true' EXIT
           m -j2 crosvm_device_only
+          kill "$monitor" 2>/dev/null || true
+          trap - EXIT
           dir=out/soong/.intermediates/external/crosvm/crosvm_device_only/crosvm_device_only_bin
           runtime="$(find "$dir" -path '*/android_arm64*/crosvm' -type f | head -n1)"
           test -n "$runtime"
